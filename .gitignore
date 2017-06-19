@@ -1,0 +1,6 @@
+event.json
+node_modules
+env.yml
+.idea
+.serverless
+.webpack

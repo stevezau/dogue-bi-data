@@ -1,0 +1,9 @@
+{
+  "plugins": [
+    "transform-runtime"
+  ],
+  "presets": [
+    "node6",
+    "stage-2"
+  ]
+}

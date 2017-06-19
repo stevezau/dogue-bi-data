@@ -1,0 +1,56 @@
+service: dogue-bi
+
+provider:
+  name: aws
+  runtime: nodejs6.10
+  region: ap-southeast-2
+  environment: ${file(./env.yml)}
+
+plugins:
+  - serverless-webpack
+  - serverless-offline
+
+custom:
+  webpackIncludeModules: true # enable auto including modules
+  serverless-offline:
+    babelOptions:
+      presets: ["node6", "stage-2"]
+
+functions:
+  calcReport:
+    timeout: 300
+    description: Calc report
+    memorySize: 256
+    handler: handler.calcReport
+
+  schedule:
+    timeout: 60
+    description: Schedule Events
+    memorySize: 128
+    handler: handler.schedule
+    events:
+      - schedule:
+          name: dogue-daily-report-30min
+          description: 'Run daily report every 30mins'
+          rate: cron(0/30 22-9 ? * MON-SAT *)
+          input: '{"function": "dogue-bi-prod-calcReport", "data": {"from": "7 days ago", "to": "today", type: "day"}}'
+      - schedule:
+          name: dogue-daily-report-daily
+          description: 'Run daily report'
+          rate: cron(0 9 * * ? *)
+          input: '{"function": "dogue-bi-prod-calcReport", "data": {"from": "4 weeks ago", "to": "today", type: "day"}}'
+      - schedule:
+          name: dogue-month-report-daily
+          description: 'Run monthly report'
+          rate: cron(0 9-22 * * ? *)
+          input: '{"function": "dogue-bi-prod-calcReport", "data": {"from": "2 months ago", "to": "today", type: "month"}}'
+      - schedule:
+          name: dogue-quarter-report-daily
+          description: 'Run daily report'
+          rate: cron(0 9 * * ? *)
+          input: '{"function": "dogue-bi-prod-calcReport", "data": {"from": "5 months ago", "to": "today", type: "quarter"}}'
+      - schedule:
+          name: dogue-year-report-daily
+          description: 'Run year report'
+          rate: cron(0 9 * * ? *)
+          input: '{"function": "dogue-bi-prod-calcReport", "data": {"from": "12 months ago", "to": "today", type: "year"}}'
