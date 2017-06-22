@@ -4,7 +4,6 @@ import deepEqual from 'deep-equal'
 import chrono from 'chrono-node'
 import _ from 'lodash'
 import Moment from 'moment-timezone'
-import momentQtr from 'moment-fquarter'
 import { extendMoment } from 'moment-range'
 import {
   getGraphCli,
@@ -113,7 +112,7 @@ const wageAttrs = `
   wage_cost_percent`
 
 const dailyQuery = gql`
-  query report($store: String!, $from: Date!, $to: Date!, $fys: [Int]!, $group: String!, $type: String!) {
+  query report($store: String!, $from: Date!, $to: Date!, $years: [Int]!, $group: String!, $type: String!) {
     reports(store: $store, from: $from, to: $to, type: $type) {
       _id
       store
@@ -130,7 +129,17 @@ const dailyQuery = gql`
         ${wageAttrs}
       }
     }
-    calcSales(store: $store, from: $from, to: $to, group: $group) {
+    deptSales: calcSales(store: $store, from: $from, to: $to, group: $group, department: true) {
+      date
+      department
+      total
+      tax
+      units
+      subtotal
+      discount
+      transactions
+    }
+    allSales: calcSales(store: $store, from: $from, to: $to, group: $group, department: false) {
       date
       department
       total
@@ -148,9 +157,9 @@ const dailyQuery = gql`
       employees
       hours
     }
-    targets (store:$store, fys: $fys) {
-      fy
-      weekly {
+    targets (store:$store, years: $years) {
+      year
+      weeks {
         w1 {total, retail, daycare, grooming}
         w2 {total, retail, daycare, grooming}
         w3 {total, retail, daycare, grooming}
@@ -204,7 +213,7 @@ const dailyQuery = gql`
         w51 {total, retail, daycare, grooming}
         w52 {total, retail, daycare, grooming}
       }
-      monthly{
+      months{
         jan {total, retail, daycare, grooming}
         feb {total, retail, daycare, grooming}
         mar {total, retail, daycare, grooming}
@@ -218,13 +227,6 @@ const dailyQuery = gql`
         nov {total, retail, daycare, grooming}
         dec {total, retail, daycare, grooming}
       }
-      quarterly{
-        q1 {total, retail, daycare, grooming}
-        q2 {total, retail, daycare, grooming}
-        q3 {total, retail, daycare, grooming}
-        q4 {total, retail, daycare, grooming}
-      }
-      year {total, retail, daycare, grooming}
     }
   }`
 
@@ -235,23 +237,30 @@ const deleteOld = gql`
       }
     }`
 
-function sortType (data, sales, wages, targets) {
+function sortType (data, allSales, deptSales, wages, targets) {
+  const now = moment()
   const reports = {}
-  for (let date of moment.range(data.from, data.to).by(data.type.group)) {
+  for (let date of moment.range(data.from, data.to).by(data.type.group.date)) {
     const localDate = data.type.format(date.format('YYYY-MM-DD'))
     reports[localDate] = {
       date: date,
       type: data.type,
       local_date: localDate,
-      sales: [],
+      allSales: [],
+      deptSales: [],
       wages: [],
       target: {total: 0, retail: 0, grooming: 0, daycare: 0}
     }
   }
 
-  for (let sale of sales) {
+  for (let sale of deptSales) {
     const date = data.type.format(sale.date)
-    reports[date].sales.push(sale)
+    reports[date].deptSales.push(sale)
+  }
+
+  for (let sale of allSales) {
+    const date = data.type.format(sale.date)
+    reports[date].allSales.push(sale)
   }
 
   for (let wage of wages) {
@@ -259,7 +268,12 @@ function sortType (data, sales, wages, targets) {
     reports[date].wages.push(wage)
   }
 
-  for (let report of Object.values(reports)) {
+  for (let [date, report] of Object.entries(reports)) {
+    if (report.date > now || (report.allSales.length === 0 && report.wages.length === 0)) {
+      delete reports[date]
+      continue
+    }
+
     const target = data.type.target(report.date, targets)
     if (target) {
       report.target = target
@@ -273,52 +287,31 @@ const typesAllowed = {
     type: 'day',
     startOf: (d) => d.startOf('day'),
     endOf: (d) => d.endOf('day'),
-    group: 'day',
+    group: {query: 'day', date: 'day'},
     format: (d) => moment(d).format('YYYY-MM-DD'),
     target: (date, targets) => {}
+  },
+  'week': {
+    type: 'week',
+    startOf: (d) => d.startOf('week'),
+    endOf: (d) => d.endOf('week'),
+    group: {query: 'day', date: 'week'},
+    format: (d) => moment(d).format('YYYY-w'),
+    target: (date, targets) => {
+      const year = targets[moment(date).format('YYYY')] || {weeks: {}}
+      const week = moment(date).format('w')
+      return year.weeks[`w${week}`]
+    }
   },
   'month': {
     type: 'month',
     startOf: (d) => d.startOf('month'),
     endOf: (d) => d.endOf('month'),
-    group: 'month',
+    group: {query: 'month', date: 'month'},
     format: (d) => moment(d).format('YYYY-MM'),
     target: (date, targets) => {
-      const fy = targets[typesAllowed['year'].format(date)] || {monthly: {}}
-      return fy.monthly[moment(date).format('MMM').toLowerCase()]
-    }
-  },
-  'quarter': {
-    type: 'quarter',
-    startOf: (d) => d.startOf('quarter'),
-    endOf: (d) => d.endOf('quarter'),
-    group: 'month',
-    format: (d) => {
-      return String(momentQtr(d).fquarter(7).quarter)
-    },
-    target: (date, targets) => {
-      const fy = targets[typesAllowed['year'].format(date)] || {quarterly: {}}
-      const qtr = momentQtr(date).fquarter(7).quarter
-      return fy.quarterly[`q${qtr}`]
-    }
-  },
-  'year': {
-    type: 'year',
-    startOf: (d) => {
-      const year = momentQtr(d).fquarter(7).year
-      return moment.tz(`${year}-07-01`, d._z.name)
-    },
-    endOf: (d) => {
-      const year = momentQtr(d).fquarter(7).nextYear
-      return moment.tz(`${year}-06-30`, d._z.name)
-    },
-    group: 'month',
-    format: (d) => {
-      return String(momentQtr(d).fquarter(7).year)
-    },
-    target: (date, targets) => {
-      const fy = targets[momentQtr(date).fquarter(7).year] || {}
-      return fy.year
+      const year = targets[moment(date).format('YYYY')] || {months: {}}
+      return year.months[moment(date).format('MMM').toLowerCase()]
     }
   }
 }
@@ -336,7 +329,7 @@ function formatReport (report, data) {
       sales_subtotal: 0.0,
       sales_tax: 0.0,
       sales_discount: 0.0,
-      transactions: 0.0,
+      transactions: 0,
       units: 0,
       average_unit_value: 0.0,
       // Wages
@@ -351,6 +344,13 @@ function formatReport (report, data) {
       departments: {}
     }
 
+    let isFuture = false
+    if (report.date.diff(moment(), 'days') === 0) {
+      if (moment.tz(moment(), 'Australia/Sydney').hours() <= 18) isFuture = true
+    } else {
+      if (report.date > moment.tz(moment(), 'Australia/Sydney')) isFuture = true
+    }
+
     function newDep (name) {
       newReport.departments[name] = {
         name: name,
@@ -359,7 +359,7 @@ function formatReport (report, data) {
         sales_subtotal: 0.0,
         sales_tax: 0.0,
         sales_discount: 0.0,
-        transactions: 0.0,
+        transactions: 0,
         units: 0,
         average_unit_value: 0.0,
         // Wages
@@ -371,15 +371,17 @@ function formatReport (report, data) {
       }
     }
 
-    for (let deptSale of report.sales) {
-      if (!depsAllowed.includes(deptSale.department)) continue
-      newReport.sales_total += deptSale.total
-      newReport.sales_subtotal += deptSale.subtotal
-      newReport.sales_tax += deptSale.tax
-      newReport.sales_discount += deptSale.discount
-      newReport.transactions += deptSale.transactions.length
-      newReport.units += deptSale.units
+    for (let sale of report.allSales) {
+      newReport.sales_total += sale.total
+      newReport.sales_subtotal += sale.subtotal
+      newReport.sales_tax += sale.tax
+      newReport.sales_discount += sale.discount
+      newReport.transactions += sale.transactions
+      newReport.units += sale.units
+    }
 
+    for (let deptSale of report.deptSales) {
+      if (!depsAllowed.includes(deptSale.department)) continue
       if (!(deptSale.department in newReport.departments)) newDep(deptSale.department)
       let dept = newReport.departments[deptSale.department]
       dept.sales_total += deptSale.total
@@ -411,11 +413,14 @@ function formatReport (report, data) {
     }
 
     newReport.staff = newReport.staff.length
-    newReport.average_unit_value = divide(newReport.sales_total, newReport.units)
-    newReport.units_per_transaction = divide(newReport.units, newReport.transactions)
-    newReport.avg_transaction_value = divide(newReport.sales_total, newReport.transactions)
-    newReport.wage_cost_percent = divide(newReport.wages, newReport.sales_total) * 100
-    newReport.average_hourly_productivity = divide(newReport.sales_total, newReport.hours)
+    if (!isFuture) {
+      newReport.average_unit_value = divide(newReport.sales_total, newReport.units)
+      newReport.units_per_transaction = divide(newReport.units, newReport.transactions)
+      newReport.avg_transaction_value = divide(newReport.sales_total, newReport.transactions)
+      newReport.wage_cost_percent = toCurrency(divide(newReport.wages, newReport.sales_total) * 100)
+      newReport.average_hourly_productivity = divide(newReport.sales_total, newReport.hours)
+    }
+
     newReport.sales_total = toCurrency(newReport.sales_total)
     newReport.sales_subtotal = toCurrency(newReport.sales_subtotal)
     newReport.sales_tax = toCurrency(newReport.sales_tax)
@@ -423,14 +428,14 @@ function formatReport (report, data) {
     newReport.transactions = toCurrency(newReport.transactions)
     newReport.hours = toCurrency(newReport.hours)
     newReport.wages = toCurrency(newReport.wages)
-    newReport.average_hourly_productivity = toCurrency(newReport.average_hourly_productivity)
-    newReport.wage_cost_percent = toCurrency(newReport.wage_cost_percent)
 
     newReport.departments = Object.values(newReport.departments).reduce((d, dept) => {
+      if (!isFuture) {
+        dept.average_unit_value = divide(dept.sales_total, dept.units)
+        dept.wage_cost_percent = toCurrency(divide(dept.wages, dept.sales_total) * 100)
+        dept.average_hourly_productivity = divide(dept.sales_total, dept.hours)
+      }
       dept.staff = dept.staff.length
-      dept.average_unit_value = divide(dept.sales_total, dept.units)
-      dept.wage_cost_percent = divide(dept.wages, dept.sales_total) * 100
-      dept.average_hourly_productivity = divide(dept.sales_total, dept.hours)
       dept.sales_total = toCurrency(dept.sales_total)
       dept.sales_subtotal = toCurrency(dept.sales_subtotal)
       dept.sales_tax = toCurrency(dept.sales_tax)
@@ -438,8 +443,6 @@ function formatReport (report, data) {
       dept.transactions = toCurrency(dept.transactions)
       dept.hours = toCurrency(dept.hours)
       dept.wages = toCurrency(dept.wages)
-      dept.average_hourly_productivity = toCurrency(dept.average_hourly_productivity)
-      dept.wage_cost_percent = toCurrency(dept.wage_cost_percent)
       d.push(dept)
       return d
     }, [])
@@ -514,18 +517,6 @@ function process (data) {
   })
 }
 
-function getFYs (from, to) {
-  let fiscalYears = []
-
-  for (let month of moment.range(from, to).by('month')) {
-    const qtr = momentQtr(month).fquarter(7)
-    if (!fiscalYears.includes(qtr.year)) {
-      fiscalYears.push(qtr.year)
-    }
-  }
-  return fiscalYears
-}
-
 export default (event, context, callback) => {
   if (!event.store) return callback(new Error('Missing store parameter'))
   const type = typesAllowed[event.type]
@@ -552,25 +543,32 @@ export default (event, context, callback) => {
         from: type.startOf(moment.tz(from, rsp.data.store.timezone)),
         to: type.endOf(moment.tz(to, rsp.data.store.timezone))
       }
+      const years = []
+      for (let year of moment.range(data.from, data.to).by(data.type.group.date)) {
+        if (!years.includes(year.year())) {
+          years.push(year.year())
+        }
+      }
+
       return api.query({
         query: dailyQuery,
         variables: {
           from: data.from.toISOString(),
           to: data.to.toISOString(),
           store: event.store,
-          fys: getFYs(data.from, data.to),
-          group: data.type.group,
+          years: years,
+          group: data.type.group.query,
           type: event.type
         }
       })
     })
     .then(rsp => {
       const targets = rsp.data.targets.reduce((targets, target) => {
-        targets[target.fy] = target
+        targets[target.year] = target
         return targets
       }, {})
 
-      data.sorted = sortType(data, rsp.data.calcSales, rsp.data.calcWages, targets)
+      data.sorted = sortType(data, rsp.data.allSales, rsp.data.deptSales, rsp.data.calcWages, targets)
       data.existingReports = rsp.data.reports.reduce((existing, report) => {
         existing[report.local_date] = report
         return existing
