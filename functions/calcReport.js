@@ -285,16 +285,16 @@ function sortType (data, allSales, deptSales, wages, targets) {
 const typesAllowed = {
   'day': {
     type: 'day',
-    startOf: (d) => d.startOf('day'),
-    endOf: (d) => d.endOf('day'),
+    startOf: (d) => moment(d).startOf('day'),
+    endOf: (d) => moment(d).endOf('day'),
     group: {query: 'day', date: 'day'},
     format: (d) => moment(d).format('YYYY-MM-DD'),
     target: (date, targets) => {}
   },
   'week': {
     type: 'week',
-    startOf: (d) => d.startOf('week'),
-    endOf: (d) => d.endOf('week'),
+    startOf: (d) => moment(d).startOf('week'),
+    endOf: (d) => moment(d).endOf('week'),
     group: {query: 'day', date: 'week'},
     format: (d) => moment(d).format('YYYY-w'),
     target: (date, targets) => {
@@ -305,8 +305,8 @@ const typesAllowed = {
   },
   'month': {
     type: 'month',
-    startOf: (d) => d.startOf('month'),
-    endOf: (d) => d.endOf('month'),
+    startOf: (d) => moment(d).startOf('month'),
+    endOf: (d) => moment(d).endOf('month'),
     group: {query: 'month', date: 'month'},
     format: (d) => moment(d).format('YYYY-MM'),
     target: (date, targets) => {
@@ -346,9 +346,9 @@ function formatReport (report, data) {
 
     let isFuture = false
     if (report.date.diff(moment(), 'days') === 0) {
-      if (moment.tz(moment(), 'Australia/Sydney').hours() <= 18) isFuture = true
+      if (moment.tz(moment(), data.store.timezone).hours() < 17) isFuture = true
     } else {
-      if (report.date > moment.tz(moment(), 'Australia/Sydney')) isFuture = true
+      if (report.date > moment.tz(moment(), data.store.timezone)) isFuture = true
     }
 
     function newDep (name) {
@@ -414,13 +414,13 @@ function formatReport (report, data) {
 
     newReport.staff = newReport.staff.length
     if (!isFuture) {
-      newReport.average_unit_value = divide(newReport.sales_total, newReport.units)
-      newReport.units_per_transaction = divide(newReport.units, newReport.transactions)
-      newReport.avg_transaction_value = divide(newReport.sales_total, newReport.transactions)
       newReport.wage_cost_percent = toCurrency(divide(newReport.wages, newReport.sales_total) * 100)
       newReport.average_hourly_productivity = divide(newReport.sales_total, newReport.hours)
     }
 
+    newReport.average_unit_value = divide(newReport.sales_subtotal, newReport.units)
+    newReport.units_per_transaction = divide(newReport.units, newReport.transactions)
+    newReport.avg_transaction_value = divide(newReport.sales_subtotal, newReport.transactions)
     newReport.sales_total = toCurrency(newReport.sales_total)
     newReport.sales_subtotal = toCurrency(newReport.sales_subtotal)
     newReport.sales_tax = toCurrency(newReport.sales_tax)
@@ -431,10 +431,10 @@ function formatReport (report, data) {
 
     newReport.departments = Object.values(newReport.departments).reduce((d, dept) => {
       if (!isFuture) {
-        dept.average_unit_value = divide(dept.sales_total, dept.units)
-        dept.wage_cost_percent = toCurrency(divide(dept.wages, dept.sales_total) * 100)
-        dept.average_hourly_productivity = divide(dept.sales_total, dept.hours)
+        dept.wage_cost_percent = toCurrency(divide(dept.wages, dept.sales_subtotal) * 100)
+        dept.average_hourly_productivity = divide(dept.sales_subtotal, dept.hours)
       }
+      dept.average_unit_value = divide(dept.sales_subtotal, dept.units)
       dept.staff = dept.staff.length
       dept.sales_total = toCurrency(dept.sales_total)
       dept.sales_subtotal = toCurrency(dept.sales_subtotal)
@@ -576,7 +576,6 @@ export default (event, context, callback) => {
       return process(data)
     })
     .then(() => {
-      console.log('Deleting daily that were not updated')
       return api.mutate({
         mutation: deleteOld,
         variables: {
@@ -588,6 +587,6 @@ export default (event, context, callback) => {
         }
       })
     })
-    .then(() => callback(null, 'event: updated daily'))
+    .then(() => callback(null, `event: updated ${type.type} for store ${event.store}`))
     .catch(err => callback(err))
 }
