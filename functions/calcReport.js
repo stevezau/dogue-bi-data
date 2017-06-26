@@ -240,32 +240,36 @@ const deleteOld = gql`
 function sortType (data, allSales, deptSales, wages, targets) {
   const now = moment()
   const reports = {}
-  for (let date of moment.range(data.from, data.to).by(data.type.group.date)) {
-    const localDate = data.type.format(date.format('YYYY-MM-DD'))
-    reports[localDate] = {
-      date: date,
-      type: data.type,
-      local_date: localDate,
-      allSales: [],
-      deptSales: [],
-      wages: [],
-      target: {total: 0, retail: 0, grooming: 0, daycare: 0}
+
+  function getReport (date) {
+    const localDate = data.type.format(date)
+    if (!(localDate in reports)) {
+      reports[localDate] = {
+        date: data.type.formatDT(date, data.store.timezone),
+        type: data.type,
+        local_date: localDate,
+        allSales: [],
+        deptSales: [],
+        wages: [],
+        target: {total: 0, retail: 0, grooming: 0, daycare: 0}
+      }
     }
+    return reports[localDate]
   }
 
   for (let sale of deptSales) {
-    const date = data.type.format(sale.date)
-    reports[date].deptSales.push(sale)
+    const report = getReport(sale.date)
+    report.deptSales.push(sale)
   }
 
   for (let sale of allSales) {
-    const date = data.type.format(sale.date)
-    reports[date].allSales.push(sale)
+    const report = getReport(sale.date)
+    report.allSales.push(sale)
   }
 
   for (let wage of wages) {
-    const date = data.type.format(wage.date)
-    reports[date].wages.push(wage)
+    const report = getReport(wage.date)
+    report.wages.push(wage)
   }
 
   for (let [date, report] of Object.entries(reports)) {
@@ -289,6 +293,7 @@ const typesAllowed = {
     endOf: (d) => moment(d).endOf('day'),
     group: {query: 'day', date: 'day'},
     format: (d) => moment(d).format('YYYY-MM-DD'),
+    formatDT: (d, tz) => moment.tz(d, tz).hour(7),  // User hour 7 to remove daylight savings issues
     target: (date, targets) => {}
   },
   'week': {
@@ -297,6 +302,7 @@ const typesAllowed = {
     endOf: (d) => moment(d).endOf('week'),
     group: {query: 'day', date: 'week'},
     format: (d) => moment(d).format('YYYY-w'),
+    formatDT: (d, tz) => moment.tz(d, tz).startOf('isoWeek').hour(7), // User hour 7 to remove daylight savings issues
     target: (date, targets) => {
       const year = targets[moment(date).format('YYYY')] || {weeks: {}}
       const week = moment(date).format('w')
@@ -309,6 +315,7 @@ const typesAllowed = {
     endOf: (d) => moment(d).endOf('month'),
     group: {query: 'month', date: 'month'},
     format: (d) => moment(d).format('YYYY-MM'),
+    formatDT: (d, tz) => moment.tz(d, tz).startOf('month').hour(7), // User hour 7 to remove daylight savings issues
     target: (date, targets) => {
       const year = targets[moment(date).format('YYYY')] || {months: {}}
       return year.months[moment(date).format('MMM').toLowerCase()]
@@ -346,7 +353,7 @@ function formatReport (report, data) {
 
     let isFuture = false
     if (report.date.diff(moment(), 'days') === 0) {
-      if (moment.tz(moment(), data.store.timezone).hours() < 17) isFuture = true
+      if (moment.tz(moment(), data.store.timezone).hours() < 16) isFuture = true
     } else {
       if (report.date > moment.tz(moment(), data.store.timezone)) isFuture = true
     }
@@ -549,6 +556,7 @@ export default (event, context, callback) => {
           years.push(year.year())
         }
       }
+      console.log(`CalcReport ${event.type} for ${event.store} from: ${data.from.format()} to: ${data.to.format()}`)
 
       return api.query({
         query: dailyQuery,

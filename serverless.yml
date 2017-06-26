@@ -43,12 +43,22 @@ functions:
       - schedule:
           name: dogue-daily-report-daily
           description: 'Run daily report'
-          rate: cron(0 7,8,9,22 * * ? *)
+          rate: cron(0/30 7,8,9,22 * * ? *)
           input: '{"function": "dogue-bi-prod-calcReport", "data": {"from": "4 months ago", "to": "today", "type": "day"}}'
+      - schedule:
+          name: dogue-week-report-30min
+          description: 'Run daily report every 30mins'
+          rate: cron(0/30 22-9 ? * MON-SAT *)
+          input: '{"function": "dogue-bi-prod-calcReport", "data": {"from": "4 weeks ago", "to": "today", "type": "week"}}'
+      - schedule:
+          name: dogue-week-report-daily
+          description: 'Run daily report'
+          rate: cron(0/30 7,8,9,22 * * ? *)
+          input: '{"function": "dogue-bi-prod-calcReport", "data": {"from": "4 months ago", "to": "today", "type": "week"}}'
       - schedule:
           name: dogue-week-report-daily
           description: 'Run weekly report'
-          rate: cron(0 7,8,9,22 * * ? *)
+          rate: cron(0/30 7,8,9,22 * * ? *)
           input: '{"function": "dogue-bi-prod-calcReport", "data": {"from": "4 months ago", "to": "today", "type": "month"}}'
       - schedule:
           name: dogue-month-report-daily
