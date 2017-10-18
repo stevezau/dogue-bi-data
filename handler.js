@@ -1,3 +1,4 @@
+import request from 'request'; // eslint-disable-line
 import consoleTS from 'console-stamp';
 import { calcReport } from './src/calcReport';
 
