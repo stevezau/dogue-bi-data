@@ -59,26 +59,6 @@ export function queryGraphQL(query, variables = {}) {
   });
 }
 
-export function pagedPromise(action, resource, filter, sort, data, limit = 500) {
-  const entries = [];
-  let lastCount = limit;
-
-  function loop() {
-    if (lastCount < limit) {
-      return Promise.resolve(entries);
-    }
-    const start = entries.length === 0 ? 0 : entries.length;
-    return Promise.resolve(action(resource, filter, sort, data, start, limit))
-      .then((results) => {
-        entries.push(...results);
-        lastCount = results.length;
-        return Promise.resolve().then(loop);
-      })
-      .catch(err => Promise.reject(err));
-  }
-
-  return Promise.resolve().then(loop);
-}
 
 export function getStore(name) {
   return new Promise((resolve, reject) => {
@@ -122,6 +102,7 @@ export function compareArrays(existingArray, newArray, key = 'uid') {
 }
 
 export function toCurrency(o) {
+  if (Number.isNaN(o)) return 0.0;
   return Number(o.toFixed(2));
 }
 

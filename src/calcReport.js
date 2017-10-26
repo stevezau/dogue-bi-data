@@ -15,13 +15,62 @@ import {
 
 const moment = extendMoment(Moment);
 
-const depsAllowed = [
-  'Daycare',
-  'Grooming',
-  'Retail'
-];
+function KPIMetrics(store, metrics, report) {
+  let isFuture = false;
+  if (report.date.diff(moment(), 'days') === 0) {
+    if (moment.tz(moment(), store.timezone).hours() < 16) isFuture = true;
+  } else if (report.date > moment.tz(moment(), store.timezone)) isFuture = true;
 
-function sortType(store, type, allSales, deptSales, wages, targets) {
+  const kpiMetrics = {
+    units_per_transaction: divide(metrics.sales_units, metrics.sales_transactions),
+    average_unit_value: divide(metrics.sales_subtotal, metrics.sales_units),
+    avg_transaction_value: divide(metrics.sales_subtotal, metrics.sales_transactions),
+    wage_cost_percent: 0,
+    average_hourly_productivity: 0
+  };
+
+  if (!isFuture) {
+    kpiMetrics.wage_cost_percent = divide(metrics.staff_wages, metrics.sales_total) * 100;
+    kpiMetrics.average_hourly_productivity = divide(metrics.sales_total, metrics.staff_hours);
+  }
+
+  return kpiMetrics;
+}
+
+function salesMetrics(sales, target) {
+  return {
+    sales_target: target,
+    sales_total: toCurrency(sales.reduce((v, s) => v + s.total, 0) || 0.0),
+    sales_subtotal: toCurrency(sales.reduce((v, s) => v + s.subtotal, 0) || 0.0),
+    sales_tax: toCurrency(sales.reduce((v, s) => v + s.tax, 0) || 0.0),
+    sales_discount: toCurrency(sales.reduce((v, s) => v + s.discount, 0) || 0.0),
+    sales_transactions: toCurrency(sales.reduce((v, s) => v + s.transactions, 0) || 0),
+    sales_units: sales.reduce((v, s) => v + s.units, 0) || 0
+  };
+}
+
+function wageMetrics(departments) {
+  let hours = 0;
+  let wages = 0.0;
+
+  const staff = new Set();
+  departments.forEach((d) => {
+    hours += toCurrency(d.wages.reduce((v, w) => w.hours + v, 0)) || 0;
+    wages += toCurrency(d.wages.reduce((v, w) => w.total + v, 0)) || 0;
+    d.wages.forEach((wage) => {
+      const employees = wage.employees || [];
+      employees.forEach(emp => staff.add(emp));
+    });
+  });
+
+  return {
+    staff_hours: hours,
+    staff_wages: wages,
+    staff_count: staff.size
+  };
+}
+
+function sortType(store, type, data, targets) {
   const now = moment();
   const reports = {};
 
@@ -31,35 +80,42 @@ function sortType(store, type, allSales, deptSales, wages, targets) {
       reports[localDate] = {
         date: type.formatDT(date, store.timezone),
         type,
-        local_date: localDate,
-        allSales: [],
-        deptSales: [],
-        wages: [],
         target: {
-          total: 0, retail: 0, grooming: 0, daycare: 0
-        }
+          store: 0, retail: 0, grooming: 0, daycare: 0
+        },
+        sales: [],
+        local_date: localDate,
+        departments: {}
       };
     }
     return reports[localDate];
   }
 
-  deptSales.forEach((sale) => {
-    const report = getReport(sale.date);
-    report.deptSales.push(sale);
+  function getDept(date, name) {
+    const report = getReport(date);
+    if (!(name in report.departments)) {
+      report.departments[name] = { sales: [], wages: [] };
+    }
+    return report.departments[name];
+  }
+
+  data.deptSales.forEach((sale) => {
+    const dept = getDept(sale.date, sale.department.toLowerCase());
+    dept.sales.push(sale);
   });
 
-  allSales.forEach((sale) => {
+  data.sales.forEach((sale) => {
     const report = getReport(sale.date);
-    report.allSales.push(sale);
+    report.sales.push(sale);
   });
 
-  wages.forEach((wage) => {
-    const report = getReport(wage.date);
-    report.wages.push(wage);
+  data.wages.forEach((wage) => {
+    const dept = getDept(wage.date, wage.department.toLowerCase());
+    dept.wages.push(wage);
   });
 
   Object.entries(reports).forEach(([date, report]) => {
-    if (report.date > now || (report.allSales.length === 0 && report.wages.length === 0)) {
+    if (report.date > now || (report.sales === {} && report.wages.length === 0)) {
       delete reports[date];
       return;
     }
@@ -111,135 +167,50 @@ const typesAllowed = {
 };
 
 function formatReport(store, type, report) {
-  const newReport = {
+  const departments = {
+    daycare: { name: 'daycare', metrics: {} },
+    grooming: { name: 'grooming', metrics: {} },
+    retail: { name: 'retail', metrics: {} },
+  };
+
+  const storeMetrics = {};
+
+  // Sales Metrics
+  Object.assign(storeMetrics, salesMetrics(report.sales, report.target.total || 0));
+
+  // Wage Metrics
+  const validDepts = [];
+  Object.entries(report.departments).forEach(([deptName, deptObj]) => {
+    if (deptName in departments) validDepts.push(deptObj);
+  });
+  Object.assign(storeMetrics, wageMetrics(validDepts));
+
+  // KPI Metrics
+  Object.assign(storeMetrics, KPIMetrics(store, storeMetrics, report));
+
+  // Department Metrics
+  Object.entries(departments).forEach(([deptName, deptObj]) => {
+    const dept = report.departments[deptName] || { sales: [], wages: [] };
+    // Dept Sales
+    Object.assign(deptObj.metrics, salesMetrics(dept.sales || {}, report.target[deptName] || 0)); // eslint-disable-line
+
+    // Dept Wages
+    Object.assign(deptObj.metrics, wageMetrics([dept]));
+
+    // Dept KPI Metrics
+    Object.assign(deptObj.metrics, KPIMetrics(store, deptObj.metrics, report));
+  });
+
+  departments.store = { name: 'store', metrics: storeMetrics };
+
+  return {
     store: store.name,
     key: `${report.local_date}-${type.type}`,
     type: type.type,
     date: report.date.toISOString(),
     local_date: report.local_date,
-    // Sales
-    target: report.target.total,
-    sales_total: 0.0,
-    sales_subtotal: 0.0,
-    sales_tax: 0.0,
-    sales_discount: 0.0,
-    transactions: 0,
-    units: 0,
-    average_unit_value: 0.0,
-    // Wages
-    hours: 0.0,
-    wages: 0.0,
-    average_hourly_productivity: 0.0,
-    staff: [],
-    wage_cost_percent: 0.0,
-    // Others
-    units_per_transaction: 0.0,
-    avg_transaction_value: 0.0,
-    departments: {}
+    departments: Object.values(departments),
   };
-
-  let isFuture = false;
-  if (report.date.diff(moment(), 'days') === 0) {
-    if (moment.tz(moment(), store.timezone).hours() < 16) isFuture = true;
-  } else if (report.date > moment.tz(moment(), store.timezone)) isFuture = true;
-
-  function newDep(name) {
-    newReport.departments[name] = {
-      name,
-      target: report.target[name.toLowerCase()],
-      sales_total: 0.0,
-      sales_subtotal: 0.0,
-      sales_tax: 0.0,
-      sales_discount: 0.0,
-      transactions: 0,
-      units: 0,
-      average_unit_value: 0.0,
-      // Wages
-      hours: 0.0,
-      wages: 0.0,
-      average_hourly_productivity: 0.0,
-      staff: [],
-      wage_cost_percent: 0.0
-    };
-  }
-
-  report.allSales.forEach((sale) => {
-    newReport.sales_total += sale.total;
-    newReport.sales_subtotal += sale.subtotal;
-    newReport.sales_tax += sale.tax;
-    newReport.sales_discount += sale.discount;
-    newReport.transactions += sale.transactions;
-    newReport.units += sale.units;
-  });
-
-  report.deptSales.forEach((deptSale) => {
-    if (!depsAllowed.includes(deptSale.department)) return;
-    if (!(deptSale.department in newReport.departments)) newDep(deptSale.department);
-    const dept = newReport.departments[deptSale.department];
-    dept.sales_total += deptSale.total;
-    dept.sales_subtotal += deptSale.subtotal;
-    dept.sales_tax += deptSale.tax;
-    dept.sales_discount += deptSale.discount;
-    dept.units += deptSale.units;
-  });
-
-  report.wages.forEach((deptWage) => {
-    if (!depsAllowed.includes(deptWage.department)) return;
-    newReport.hours += deptWage.hours;
-    newReport.wages += deptWage.total;
-    deptWage.employees.forEach((employee) => {
-      if (!(employee in newReport.staff)) {
-        newReport.staff.push(employee);
-      }
-    });
-
-    if (!(deptWage.department in newReport.departments)) newDep(deptWage.department);
-    const dept = newReport.departments[deptWage.department];
-    dept.hours = deptWage.hours;
-    dept.wages = deptWage.total;
-    deptWage.employees.forEach((employee) => {
-      if (!(employee in dept.staff)) {
-        dept.staff.push(employee);
-      }
-    });
-  });
-
-  newReport.staff = newReport.staff.length;
-  if (!isFuture) {
-    newReport.wage_cost_percent = toCurrency(divide(newReport.wages, newReport.sales_total) * 100); // eslint-disable-line
-    newReport.average_hourly_productivity = divide(newReport.sales_total, newReport.hours);
-  }
-
-  newReport.average_unit_value = divide(newReport.sales_subtotal, newReport.units);
-  newReport.units_per_transaction = divide(newReport.units, newReport.transactions);
-  newReport.avg_transaction_value = divide(newReport.sales_subtotal, newReport.transactions);
-  newReport.sales_total = toCurrency(newReport.sales_total);
-  newReport.sales_subtotal = toCurrency(newReport.sales_subtotal);
-  newReport.sales_tax = toCurrency(newReport.sales_tax);
-  newReport.sales_discount = toCurrency(newReport.sales_discount);
-  newReport.transactions = toCurrency(newReport.transactions);
-  newReport.hours = toCurrency(newReport.hours);
-  newReport.wages = toCurrency(newReport.wages);
-
-  newReport.departments = Object.values(newReport.departments).reduce((accum, d) => {
-    const dept = { ...d };
-    if (!isFuture) {
-      dept.wage_cost_percent = toCurrency(divide(dept.wages, dept.sales_subtotal) * 100);
-      dept.average_hourly_productivity = divide(dept.sales_subtotal, dept.hours);
-    }
-    dept.average_unit_value = divide(dept.sales_subtotal, dept.units);
-    dept.staff = dept.staff.length;
-    dept.sales_total = toCurrency(dept.sales_total);
-    dept.sales_subtotal = toCurrency(dept.sales_subtotal);
-    dept.sales_tax = toCurrency(dept.sales_tax);
-    dept.sales_discount = toCurrency(dept.sales_discount);
-    dept.transactions = toCurrency(dept.transactions);
-    dept.hours = toCurrency(dept.hours);
-    dept.wages = toCurrency(dept.wages);
-    accum.push(dept);
-    return accum;
-  }, []);
-  return newReport;
 }
 
 function getData(store, type, from, to) {
@@ -262,7 +233,7 @@ function getData(store, type, from, to) {
 
 function processUpdates(store, updated, deleted) {
   const promises = [];
-  const mutations = updated.map(wage => reportMutation(wage));
+  const mutations = updated.map(r => reportMutation(r));
   if (mutations.length > 0) {
     console.log(`Will update ${mutations.length} reports`);
     promises.push(mutateGraphQL(chunkMutations(mutations)));
@@ -301,7 +272,7 @@ export async function calcReport(event, context, callback) {
 
     const existingReports = data.reports.map(r => ({ ...r, key: `${r.local_date}-${r.type}` }));
 
-    const sorted = sortType(store, type, data.allSales, data.deptSales, data.calcWages, targets);
+    const sorted = sortType(store, type, data, targets);
     const formatted = Object.values(sorted).map(r => formatReport(store, type, r));
 
     const compared = compareArrays(existingReports, formatted, 'key');
