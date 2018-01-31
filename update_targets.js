@@ -21,10 +21,10 @@ function getTargets(sheet) {
   return XLSX.utils.sheet_to_json(sheet).map((row) => {
     return {
       month: moment(row.month, 'YYYY-MMM'),
-      total: Number(row.total.replace(dollarRegex, '')) || 0,
-      retail: Number(row.retail.replace(dollarRegex, '')) || 0,
-      grooming: Number(row.grooming.replace(dollarRegex, '')) || 0,
-      daycare: Number(row.daycare.replace(dollarRegex, '')) || 0
+      total: row.total ? Number(row.total.replace(dollarRegex, '')) : 0,
+      retail: row.retail ? Number(row.retail.replace(dollarRegex, '')) : 0,
+      grooming: row.grooming ? Number(row.grooming.replace(dollarRegex, '')) : 0,
+      daycare: row.daycare ? Number(row.daycare.replace(dollarRegex, '')) : 0
     };
   });
 }
