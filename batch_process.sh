@@ -1,5 +1,5 @@
 #!/bin/bash
-stores=( bondi balmain avalon brighton )
+stores=( bondi balmain avalon brighton gymea zetland wahroonga gungahlin )
 fn=$1
 type=$2
 from=$3

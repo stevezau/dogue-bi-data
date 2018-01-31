@@ -101,9 +101,9 @@ export function compareArrays(existingArray, newArray, key = 'uid') {
   return results;
 }
 
-export function toCurrency(o) {
+export function toCurrency(o, fixed = 2) {
   if (Number.isNaN(o)) return 0.0;
-  return Number(o.toFixed(2));
+  return Number(o.toFixed(fixed));
 }
 
 export function divide(d1, d2) {
