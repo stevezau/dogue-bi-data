@@ -259,7 +259,12 @@ export async function calcReport(event, context, callback) {
   try {
     const store = await getStore(event.store);
     const fromTZ = type.startOf(moment.tz(from, store.timezone));
-    const toTZ = type.endOf(moment.tz(to, store.timezone));
+    let toTZ = type.endOf(moment.tz(to, store.timezone));
+
+    const now = moment.tz(moment(), store.timezone).endOf('day');
+    if (toTZ > now) {
+      toTZ = now;
+    }
 
     console.log(`CalcReport ${event.type} for ${event.store} from: ${fromTZ.format()} to: ${toTZ.format()}`);
 
