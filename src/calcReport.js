@@ -261,9 +261,18 @@ export async function calcReport(event, context, callback) {
     const fromTZ = type.startOf(moment.tz(from, store.timezone));
     let toTZ = type.endOf(moment.tz(to, store.timezone));
 
-    const now = moment.tz(moment(), store.timezone).endOf('day');
+    // Don't include future or current day if before 5pm
+    const now = moment.tz(moment(), store.timezone);
+    const nowDayEnd = moment.tz(moment(), store.timezone).hour('17').minute(0);
+    const yesterday = moment.tz(moment(), store.timezone).subtract(1, 'day').endOf('day');
     if (toTZ > now) {
-      toTZ = now;
+      // toTZ is in the future
+      if (now < nowDayEnd) {
+        // Before 5pm on current day, use yesterday
+        toTZ = yesterday;
+      } else {
+        toTZ = now;
+      }
     }
 
     console.log(`CalcReport ${event.type} for ${event.store} from: ${fromTZ.format()} to: ${toTZ.format()}`);
