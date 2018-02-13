@@ -30,8 +30,8 @@ function KPIMetrics(store, metrics, report) {
   };
 
   if (!isFuture) {
-    kpiMetrics.wage_cost_percent = divide(metrics.staff_wages, metrics.sales_total) * 100;
-    kpiMetrics.average_hourly_productivity = divide(metrics.sales_total, metrics.staff_hours);
+    kpiMetrics.wage_cost_percent = divide(metrics.staff_wages, metrics.sales_subtotal) * 100;
+    kpiMetrics.average_hourly_productivity = divide(metrics.sales_subtotal, metrics.staff_hours);
   }
 
   return kpiMetrics;
