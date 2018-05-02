@@ -1,7 +1,13 @@
 import _ from 'lodash';
 import deepEqual from 'deep-equal';
-import request from 'request-promise-native';
+import axios from 'axios';
 import { storeQuery } from './graph.schema';
+
+axios.interceptors.response.use((response) => {
+  const hrend = process.hrtime(response.config.ts);
+  console.info('Execution time (hr): %ds %dms', hrend[0], hrend[1] / 1000000);
+  return response;
+});
 
 export function chunkMutations(mutations, size = 5) {
   return _.chunk(mutations, size).map(chunk => `mutation {${chunk}}`);
@@ -20,16 +26,16 @@ export function handleError(err, store, cb) {
 
 function requestHandler(options) {
   return new Promise((resolve, reject) => {
-    request(options)
+    axios({ ...options, ts: process.hrtime() })
       .then((res) => {
-        if (res.errors) {
-          reject(new Error(JSON.stringify(res.errors)));
+        if (res.data.errors) {
+          reject(new Error(JSON.stringify(res.data.errors)));
         } else {
-          resolve(res);
+          resolve(res.data);
         }
       })
       .catch((err) => {
-        console.log(err);
+        console.log(`error response ${err}`);
         reject(err);
       });
   });
@@ -40,7 +46,7 @@ export function mutateGraphQL(mutations, variables = {}) {
   return Promise.all(requests.map(req => requestHandler({
     url: process.env.GRAPHQL_URL,
     method: 'POST',
-    json: { query: req, variables },
+    data: { query: req, variables },
   })));
 }
 
@@ -49,7 +55,7 @@ export function queryGraphQL(query, variables = {}) {
     requestHandler({
       url: process.env.GRAPHQL_URL,
       method: 'POST',
-      json: {
+      data: {
         query,
         variables
       }
@@ -58,7 +64,6 @@ export function queryGraphQL(query, variables = {}) {
       .catch(err => reject(err));
   });
 }
-
 
 export function getStore(name) {
   return new Promise((resolve, reject) => {

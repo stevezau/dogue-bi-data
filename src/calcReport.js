@@ -290,7 +290,7 @@ export async function calcReport(event, context, callback) {
     const formatted = Object.values(sorted).map(r => formatReport(store, type, r));
 
     const compared = compareArrays(existingReports, formatted, 'key');
-    processUpdates(store, compared.updated, compared.deleted);
+    await processUpdates(store, compared.updated, compared.deleted);
 
     callback(null, 'updated reports');
   } catch (err) {

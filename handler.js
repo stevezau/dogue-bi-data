@@ -1,4 +1,3 @@
-import request from 'request'; // eslint-disable-line
 import consoleTS from 'console-stamp';
 import 'source-map-support/register';
 
