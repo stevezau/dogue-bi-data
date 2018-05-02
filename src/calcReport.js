@@ -16,10 +16,7 @@ import {
 const moment = extendMoment(Moment);
 
 function KPIMetrics(store, metrics, report) {
-  let isFuture = false;
-  if (report.date.diff(moment(), 'days') === 0) {
-    if (moment.tz(moment(), store.timezone).hours() < 16) isFuture = true;
-  } else if (report.date > moment.tz(moment(), store.timezone)) isFuture = true;
+  const isFuture = report.type.isFuture(store, report);
 
   const kpiMetrics = {
     units_per_transaction: divide(metrics.sales_units, metrics.sales_transactions),
@@ -137,7 +134,17 @@ const typesAllowed = {
     group: { query: 'day', date: 'day' },
     format: d => moment(d).format('YYYY-MM-DD'),
     formatDT: (d, tz) => moment.tz(d, tz).hour(7), // User hour 7 to remove daylight savings issues
-    target: () => {}
+    target: () => {},
+    isFuture: (store, report) => {
+      // Don't include future or current day if before 5pm
+      const diffDays = report.date.diff(moment(), 'days');
+      if (diffDays > 0) return true;
+      if (diffDays === 0) {
+        const todayClosing = moment.tz(moment(), store.timezone).hour('17').minute(0);
+        if (todayClosing > moment.tz(moment(), store.timezone)) return true;
+      }
+      return false;
+    }
   },
   week: {
     type: 'week',
@@ -150,7 +157,8 @@ const typesAllowed = {
       const year = targets[moment(date).format('YYYY')] || { weeks: {} };
       const week = moment(date).format('w');
       return year.weeks[`w${week}`];
-    }
+    },
+    isFuture: () => false
   },
   month: {
     type: 'month',
@@ -162,7 +170,8 @@ const typesAllowed = {
     target: (date, targets) => {
       const year = targets[moment(date).format('YYYY')] || { months: {} };
       return year.months[moment(date).format('MMM').toLowerCase()];
-    }
+    },
+    isFuture: () => false
   }
 };
 
@@ -261,18 +270,9 @@ export async function calcReport(event, context, callback) {
     const fromTZ = type.startOf(moment.tz(from, store.timezone));
     let toTZ = type.endOf(moment.tz(to, store.timezone));
 
-    // Don't include future or current day if before 5pm
-    const now = moment.tz(moment(), store.timezone);
-    const nowDayEnd = moment.tz(moment(), store.timezone).hour('17').minute(0);
-    const yesterday = moment.tz(moment(), store.timezone).subtract(1, 'day').endOf('day');
+    const now = moment.tz(moment(), store.timezone).endOf('day');
     if (toTZ > now) {
-      // toTZ is in the future
-      if (now < nowDayEnd) {
-        // Before 5pm on current day, use yesterday
-        toTZ = yesterday;
-      } else {
-        toTZ = now;
-      }
+      toTZ = now;
     }
 
     console.log(`CalcReport ${event.type} for ${event.store} from: ${fromTZ.format()} to: ${toTZ.format()}`);

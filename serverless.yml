@@ -2,8 +2,8 @@ service: dogue-bi
 
 provider:
   name: aws
-  runtime: nodejs6.10
-  region: ap-southeast-2
+  runtime: nodejs8.10
+  region: us-east-1
   environment: ${file(./env.yml)}
   stage: prod
 
@@ -11,11 +11,16 @@ plugins:
   - serverless-webpack
   - serverless-offline
 
+package:
+  individually: true
+
 custom:
-  webpackIncludeModules: true # enable auto including modules
+  webpack:
+    webpackConfig: ./webpack.config.js
+    includeModules: true
   serverless-offline:
     babelOptions:
-      presets: ["node6", "stage-2"]
+      presets: ["node8"]
 
 functions:
   calcReport:
