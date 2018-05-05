@@ -266,7 +266,11 @@ export async function calcReport(event, context, callback) {
   if (!to) return callback(new Error('Missing or invalid to parameter'));
 
   try {
-    const store = await getStore(event.store);
+    let store = { name: 'network', timezone: 'Australia/Sydney' };
+    if (event.store !== 'network') {
+      store = await getStore(event.store);
+    }
+
     const fromTZ = type.startOf(moment.tz(from, store.timezone));
     let toTZ = type.endOf(moment.tz(to, store.timezone));
 
