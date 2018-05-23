@@ -148,8 +148,8 @@ const typesAllowed = {
   },
   week: {
     type: 'week',
-    startOf: d => moment(d).startOf('week'),
-    endOf: d => moment(d).endOf('week'),
+    startOf: d => moment(d).startOf('isoWeek'),
+    endOf: d => moment(d).endOf('isoWeek'),
     group: { query: 'day', date: 'week' },
     format: d => moment(d).format('YYYY-w'),
     formatDT: (d, tz) => moment.tz(d, tz).startOf('isoWeek').hour(7), // User hour 7 to remove daylight savings issues
@@ -266,8 +266,11 @@ export async function calcReport(event, context, callback) {
   if (!to) return callback(new Error('Missing or invalid to parameter'));
 
   try {
-    let store = { name: 'network', timezone: 'Australia/Sydney' };
-    if (event.store !== 'network') {
+    let store;
+
+    if (event.store === 'network') {
+      store = { name: 'network', timezone: 'Australia/Sydney' };
+    } else {
       store = await getStore(event.store);
     }
 

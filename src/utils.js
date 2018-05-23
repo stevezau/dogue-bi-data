@@ -19,7 +19,7 @@ export function handleError(err, store, cb) {
   } else if (err.message === 'captcha required') {
     console.log(`Cannot log into Mindbody due to captcha bing detected for store ${store}`);
   } else {
-    console.trace(err);
+    console.trace(`Error: ${JSON.stringify(err)}`);
     cb(err);
   }
 }
