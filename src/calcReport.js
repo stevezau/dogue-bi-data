@@ -151,11 +151,11 @@ const typesAllowed = {
     startOf: d => moment(d).startOf('isoWeek'),
     endOf: d => moment(d).endOf('isoWeek'),
     group: { query: 'day', date: 'week' },
-    format: d => moment(d).format('YYYY-w'),
+    format: d => moment(d).format('YYYY-W'),
     formatDT: (d, tz) => moment.tz(d, tz).startOf('isoWeek').hour(7), // User hour 7 to remove daylight savings issues
     target: (date, targets) => {
       const year = targets[moment(date).format('YYYY')] || { weeks: {} };
-      const week = moment(date).format('w');
+      const week = moment(date).format('W');
       return year.weeks[`w${week}`];
     },
     isFuture: () => false
