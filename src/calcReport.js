@@ -254,24 +254,15 @@ function processUpdates(store, updated, deleted) {
   return Promise.all(promises);
 }
 
-export async function calcReport(event, context, callback) {
-  if (!event.store) return callback(new Error('Missing store parameter'));
-
-  const type = typesAllowed[event.type];
-  if (!type) return callback(new Error('Missing or invalid type parameter'));
-
-  const from = chrono.parseDate(event.from);
-  const to = chrono.parseDate(event.to);
-  if (!from) return callback(new Error('Missing or invalid from parameter'));
-  if (!to) return callback(new Error('Missing or invalid to parameter'));
+async function processStore(name, from, to, type) {
 
   try {
     let store;
 
-    if (event.store === 'network') {
+    if (name === 'network') {
       store = { name: 'network', timezone: 'Australia/Sydney' };
     } else {
-      store = await getStore(event.store);
+      store = await getStore(name);
     }
 
     const fromTZ = type.startOf(moment.tz(from, store.timezone));
@@ -282,7 +273,7 @@ export async function calcReport(event, context, callback) {
       toTZ = now;
     }
 
-    console.log(`CalcReport ${event.type} for ${event.store} from: ${fromTZ.format()} to: ${toTZ.format()}`);
+    console.log(`CalcReport ${type.type} for ${name} from: ${fromTZ.format()} to: ${toTZ.format()}`);
 
     const data = await getData(store, type, fromTZ, toTZ);
 
@@ -299,8 +290,28 @@ export async function calcReport(event, context, callback) {
     const compared = compareArrays(existingReports, formatted, 'key');
     await processUpdates(store, compared.updated, compared.deleted);
 
+    console.log(`${store.name} updated reports`);
+  } catch (err) {
+    handleError(err, name);
+  }
+}
+
+
+export async function calcReport(event, context, callback) {
+  const from = chrono.parseDate(event.from);
+  const to = chrono.parseDate(event.to);
+  if (!from) return callback(new Error('Missing or invalid from parameter'));
+  if (!to) return callback(new Error('Missing or invalid to parameter'));
+
+  const type = typesAllowed[event.type];
+  if (!type) return callback(new Error('Missing or invalid type parameter'));
+
+  const stores = event.stores ? event.stores : [event.store];
+
+  try {
+    await Promise.all(stores.map(name => processStore(name, from, to, type)));
     callback(null, 'updated reports');
   } catch (err) {
-    handleError(err, event.store, callback);
+    handleError(err, stores, callback);
   }
 }

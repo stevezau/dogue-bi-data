@@ -2,7 +2,7 @@ import Moment from 'moment';
 import { extendMoment } from 'moment-range';
 import Holidays from 'date-holidays';
 import XLSX from 'xlsx';
-import { toCurrency, queryGraphQL, mutateGraphQL, chunkMutations } from './src/utils';
+import { toCurrency, queryGraphQL, mutateGraphQL, getStore } from '../src/utils';
 
 const moment = extendMoment(Moment);
 
@@ -36,14 +36,17 @@ function getAttr(obj, key, defValue) {
   return obj[key];
 }
 
-function openDays(month, holidays) {
+function openDays(store, month) {
+  const holidays = new Holidays('AU', store.state);
+
   // Figure out the open days per month
   const days = {};
   const range = moment.range(moment(month).startOf('month'), moment(month).endOf('month'));
 
   for (let day of range.by('day')) {
-    // Check if Sunday, Closed
-    if (day.isoWeekday() === 7) continue;
+    const dayName = day.format('dddd').toLowerCase();
+    // Check if Open on Day
+    if (!store.days_open.includes(dayName)) continue;
 
     // Check if  {Holiday, Closed
     if (holidays.isHoliday(day.toDate())) continue;
@@ -59,12 +62,12 @@ function targetMutation(store, year, data, targetId) {
   const action = targetId ? 'update' : 'add';
 
   const weeks = Object.entries(data.weeks).map(([week, data]) => {
-    return `w${week}: {total: ${data.total}, retail: ${data.retail}, daycare: ${data.daycare}, grooming: ${data.grooming}}\n`;
+    return `w${week}: {days_open: ${data.days_open}, total: ${data.total}, retail: ${data.retail}, daycare: ${data.daycare}, grooming: ${data.grooming}}\n`;
   });
 
   const months = Object.entries(data.months).map(([month, data]) => {
     const monthName = data.date.format('MMM').toLowerCase();
-    return `${monthName}: {total: ${data.total}, retail: ${data.retail}, daycare: ${data.daycare}, grooming: ${data.grooming}}\n`;
+    return `${monthName}: {days_open: ${data.days_open}, total: ${data.total}, retail: ${data.retail}, daycare: ${data.daycare}, grooming: ${data.grooming}}\n`;
   });
 
   return `
@@ -72,7 +75,7 @@ function targetMutation(store, year, data, targetId) {
       ${action}Target(
         ${update}
         target: {
-          store: "${store}",
+          store: "${store.name}",
           year: ${year},
           weeks:{
             ${weeks.join(' ')}
@@ -87,11 +90,9 @@ function targetMutation(store, year, data, targetId) {
   }`;
 }
 
-// Loop through the stores
-for (const [storeName, sheet] of Object.entries(workbook.Sheets)) {
-  // TODO: Use store location
-  const holidays = new Holidays('AU', 'NSW');
-  const targets = getTargets(sheet);
+async function processStore(store, targets) {
+
+  console.log(`Process targets for store ${store.name}`);
 
   // Sort targets, oldest month first
   targets.sort((a, b) => a.month - b.month);
@@ -114,14 +115,14 @@ for (const [storeName, sheet] of Object.entries(workbook.Sheets)) {
     year.months[targetMonth] = month;
 
     // Figure out the open days per month
-    month.days = openDays(target.month, holidays);
+    month.days = openDays(store, target.month);
 
     // Figure out the daily targets
-    const openCount = Object.keys(month.days).length;
-    const dailyTotal = month.total / openCount;
-    const dailyRetail = month.retail / openCount;
-    const dailyGrooming = month.grooming / openCount;
-    const dailyDaycare = month.daycare / openCount;
+    month.days_open = Object.keys(month.days).length;
+    const dailyTotal = month.total / month.days_open;
+    const dailyRetail = month.retail / month.days_open;
+    const dailyGrooming = month.grooming / month.days_open;
+    const dailyDaycare = month.daycare / month.days_open;
 
     // Update days with targets and add to week
     for (const day of Object.values(month.days)) {
@@ -139,6 +140,7 @@ for (const [storeName, sheet] of Object.entries(workbook.Sheets)) {
   // Calc weekly targets
   for (const year of Object.values(years)) {
     for (const [week, data] of Object.entries(year.weeks)) {
+      data.days_open = data.days.length;
       data.total = toCurrency(data.days.reduce((acc, d) => acc + d.total, 0), 0);
       data.grooming = toCurrency(data.days.reduce((acc, d) => acc + d.grooming, 0), 0);
       data.retail = toCurrency(data.days.reduce((acc, d) => acc + d.retail, 0), 0);
@@ -149,19 +151,22 @@ for (const [storeName, sheet] of Object.entries(workbook.Sheets)) {
   // Update Mongo via GraphQL
   // First should we update or add?
   for (const [year, data] of Object.entries(years)) {
-    queryGraphQL(targetYearQuery, { year: Number(year), store: storeName })
-      .then(({ target }) => {
-        const targetId = target ? target._id : null;
-        const mutation = targetMutation(storeName, year, data, targetId);
-        return mutateGraphQL(mutation);
-      })
-      .then(() => {
-        console.log(`Update ${storeName} ${year} targets`)
-      })
-      .catch(err => {
-        console.log(err);
-      });
-
+    const query = await queryGraphQL(targetYearQuery, { year: Number(year), store: store.name });
+    const target = query.target;
+    const targetId = target ? target._id : null;
+    const mutation = targetMutation(store, year, data, targetId);
+    await mutateGraphQL(mutation);
+    console.log(`Update ${store.name} ${year} targets`);
   }
-
 }
+
+async function process() {
+// Loop through the stores
+  for (const [storeName, sheet] of Object.entries(workbook.Sheets)) {
+    const store = await getStore(storeName);
+    const targets = getTargets(sheet);
+    await processStore(store, targets);
+  }
+}
+
+process().then(() => console.log('done'));

@@ -15,12 +15,14 @@ export function chunkMutations(mutations, size = 5) {
 
 export function handleError(err, store, cb) {
   if (err.message === 'captcha pending') {
-    console.log('Cannot log in, waiting for captcha to resolve');
+    console.log(`${store} Cannot log in, waiting for captcha to resolve`);
   } else if (err.message === 'captcha required') {
-    console.log(`Cannot log into Mindbody due to captcha bing detected for store ${store}`);
+    console.log(`${store} Cannot log into Mindbody due to captcha bing detected`);
   } else {
-    console.trace(`Error: ${JSON.stringify(err)}`);
-    cb(err);
+    console.trace(`${store} Error: ${JSON.stringify(err)}`);
+    if (cb) {
+      cb(err);
+    }
   }
 }
 
@@ -64,6 +66,7 @@ export function queryGraphQL(query, variables = {}) {
       .catch(err => reject(err));
   });
 }
+
 
 export function getStore(name) {
   return new Promise((resolve, reject) => {

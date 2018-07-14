@@ -2,6 +2,8 @@ export const storeQuery = `
     query Store($store: String!) {
       store(name: $store) {
       name
+      days_open
+      state
       timezone
       deputy {
         url
@@ -189,8 +191,8 @@ export const dailyQuery = `
   }`;
 
 export const deleteReports = `
-    mutation deleteReport($store: String!, $from: Date!, $to: Date!, $updatedBefore:Date!, $type: String!) {
-      delete: deleteReport(store:$store, from: $from, to: $to, updatedBefore: $updatedBefore, type: $type) {
+    mutation deleteReport($store: String!, $ids: [String]!) {
+      delete: deleteReport(store:$store, ids: $ids) {
         _id
       }
     }`;
