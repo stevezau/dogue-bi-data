@@ -30,6 +30,7 @@
     "webpack-node-externals": "^1.6.0"
   },
   "dependencies": {
+    "axios": "^0.18.0",
     "babel-core": "^6.26.3",
     "babel-loader": "^7.1.2",
     "babel-preset-env": "^1.6.1",
@@ -42,8 +43,8 @@
     "moment-range": "^4.0.0",
     "moment-timezone": "^0.5.16",
     "node-uuid": "^1.4.8",
+    "phone": "^2.0.1",
     "source-map-support": "^0.5.5",
-    "xlsx": "^0.11.18",
-    "axios": "^0.18.0"
+    "xlsx": "^0.11.18"
   }
 }

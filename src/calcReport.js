@@ -186,9 +186,14 @@ function formatReport(store, type, report) {
   const reportFrom = type.startOf(report.date);
   const reportTo = type.endOf(report.date);
 
-  const daysOpen = openDays(store, reportFrom, reportTo);
-  const today = moment.tz();
-  const daysLeft = Object.values(daysOpen).filter(d => d.date.diff(today, 'days') >= 0);
+  let daysOpen = {};
+  let daysLeft = [];
+
+  if (store.days_open) {
+    daysOpen = openDays(store, reportFrom, reportTo);
+    const today = moment.tz();
+    daysLeft = Object.values(daysOpen).filter(d => d.date.diff(today, 'days') >= 0);
+  }
 
   const storeMetrics = {};
 
@@ -304,7 +309,6 @@ async function processStore(name, from, to, type) {
     handleError(err, name);
   }
 }
-
 
 export async function calcReport(event, context, callback) {
   const from = chrono.parseDate(event.from);

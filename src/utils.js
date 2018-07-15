@@ -82,7 +82,7 @@ export function getStore(name) {
   });
 }
 
-export function compareArrays(existingArray, newArray, key = 'uid') {
+export function compareArrays(existingArray, newArray, key = 'uid', delId = true) {
   const existingMap = existingArray.reduce((accumulator, arr) => ({
     ...accumulator,
     [arr[key]]: arr
@@ -94,7 +94,7 @@ export function compareArrays(existingArray, newArray, key = 'uid') {
     const existing = existingMap[obj[key]];
     if (existing) {
       const temp = { ...existing };
-      delete temp._id; // eslint-disable-line
+      if (delId) delete temp._id; // eslint-disable-line
       if (!deepEqual(obj, temp)) {
         // Has changed
         results.updated.push({ ...obj, '_id': existing._id }); // eslint-disable-line
