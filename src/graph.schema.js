@@ -52,6 +52,8 @@ export function reportMutation(report) {
         type: "${report.type}",
         date: "${report.date}",
         local_date: "${report.local_date}",
+        days_open: ${report.days_open},
+        days_left: ${report.days_left},
         departments: [
           ${departmentMutation(report.departments).join(' ')}
         ]
@@ -68,6 +70,8 @@ export const dailyQuery = `
       type
       date
       local_date
+      days_open
+      days_left
       departments {
         name
         metrics {

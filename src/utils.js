@@ -1,7 +1,13 @@
 import _ from 'lodash';
 import deepEqual from 'deep-equal';
 import axios from 'axios';
+import Holidays from 'date-holidays/src/index';
+import Moment from 'moment/moment';
+import { extendMoment } from 'moment-range';
+
 import { storeQuery } from './graph.schema';
+
+export const moment = extendMoment(Moment);
 
 axios.interceptors.response.use((response) => {
   const hrend = process.hrtime(response.config.ts);
@@ -119,4 +125,23 @@ export function divide(d1, d2) {
     return 0;
   }
   return toCurrency(d1 / d2);
+}
+
+
+export function openDays(store, from, to) {
+  const holidays = new Holidays('AU', store.state);
+
+  // Figure out the open days per month
+  const days = {};
+  const range = moment.range(moment(from).startOf('day'), moment(to).endOf('day'));
+
+  for (const day of range.by('day')) {  // eslint-disable-line
+    const dayName = day.format('dddd').toLowerCase();
+    // Check if Open on Day
+    if (store.days_open.includes(dayName) && !holidays.isHoliday(day.toDate())) {
+      days[day.format('YYYY-MM-DD')] = { date: day };
+    }
+  }
+
+  return days;
 }

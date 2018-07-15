@@ -1,8 +1,7 @@
 import Moment from 'moment';
 import { extendMoment } from 'moment-range';
-import Holidays from 'date-holidays';
 import XLSX from 'xlsx';
-import { toCurrency, queryGraphQL, mutateGraphQL, getStore } from '../src/utils';
+import { toCurrency, queryGraphQL, mutateGraphQL, getStore, openDays } from '../src/utils';
 
 const moment = extendMoment(Moment);
 
@@ -18,15 +17,13 @@ export const targetYearQuery = `
   }`;
 
 function getTargets(sheet) {
-  return XLSX.utils.sheet_to_json(sheet).map((row) => {
-    return {
-      month: moment(row.month, 'YYYY-MMM'),
-      total: row.total ? Number(row.total.replace(dollarRegex, '')) : 0,
-      retail: row.retail ? Number(row.retail.replace(dollarRegex, '')) : 0,
-      grooming: row.grooming ? Number(row.grooming.replace(dollarRegex, '')) : 0,
-      daycare: row.daycare ? Number(row.daycare.replace(dollarRegex, '')) : 0
-    };
-  });
+  return XLSX.utils.sheet_to_json(sheet).map(row => ({
+    month: moment(row.month, 'YYYY-MMM'),
+    total: row.total ? Number(row.total.replace(dollarRegex, '')) : 0,
+    retail: row.retail ? Number(row.retail.replace(dollarRegex, '')) : 0,
+    grooming: row.grooming ? Number(row.grooming.replace(dollarRegex, '')) : 0,
+    daycare: row.daycare ? Number(row.daycare.replace(dollarRegex, '')) : 0
+  }));
 }
 
 function getAttr(obj, key, defValue) {
@@ -36,38 +33,15 @@ function getAttr(obj, key, defValue) {
   return obj[key];
 }
 
-function openDays(store, month) {
-  const holidays = new Holidays('AU', store.state);
-
-  // Figure out the open days per month
-  const days = {};
-  const range = moment.range(moment(month).startOf('month'), moment(month).endOf('month'));
-
-  for (let day of range.by('day')) {
-    const dayName = day.format('dddd').toLowerCase();
-    // Check if Open on Day
-    if (!store.days_open.includes(dayName)) continue;
-
-    // Check if  {Holiday, Closed
-    if (holidays.isHoliday(day.toDate())) continue;
-
-    days[day.format('YYYY-MM-DD')] = { date: day };
-  }
-
-  return days;
-}
-
 function targetMutation(store, year, data, targetId) {
   const update = targetId ? `id: "${targetId}"` : '';
   const action = targetId ? 'update' : 'add';
 
-  const weeks = Object.entries(data.weeks).map(([week, data]) => {
-    return `w${week}: {days_open: ${data.days_open}, total: ${data.total}, retail: ${data.retail}, daycare: ${data.daycare}, grooming: ${data.grooming}}\n`;
-  });
+  const weeks = Object.entries(data.weeks).map(([w, d]) => `w${w}: {days_open: ${d.days_open}, total: ${d.total}, retail: ${d.retail}, daycare: ${d.daycare}, grooming: ${d.grooming}}\n`);
 
-  const months = Object.entries(data.months).map(([month, data]) => {
-    const monthName = data.date.format('MMM').toLowerCase();
-    return `${monthName}: {days_open: ${data.days_open}, total: ${data.total}, retail: ${data.retail}, daycare: ${data.daycare}, grooming: ${data.grooming}}\n`;
+  const months = Object.values(data.months).map((d) => {
+    const monthName = d.date.format('MMM').toLowerCase();
+    return `${monthName}: {days_open: ${d.days_open}, total: ${d.total}, retail: ${d.retail}, daycare: ${d.daycare}, grooming: ${d.grooming}}\n`;
   });
 
   return `
@@ -91,7 +65,6 @@ function targetMutation(store, year, data, targetId) {
 }
 
 async function processStore(store, targets) {
-
   console.log(`Process targets for store ${store.name}`);
 
   // Sort targets, oldest month first
@@ -100,7 +73,7 @@ async function processStore(store, targets) {
   const years = {};
 
   // Figure out the targets by year, month incl holidays
-  for (const target of targets) {
+  for (const target of targets) {  // eslint-disable-line
     const targetYear = target.month.year();
     const targetMonth = target.month.month() + 1;
     const year = getAttr(years, targetYear, { months: {}, weeks: {} });
@@ -115,7 +88,7 @@ async function processStore(store, targets) {
     year.months[targetMonth] = month;
 
     // Figure out the open days per month
-    month.days = openDays(store, target.month);
+    month.days = openDays(store, moment(target.month).startOf('month'), moment(target.month).endOf('month'));
 
     // Figure out the daily targets
     month.days_open = Object.keys(month.days).length;
@@ -125,7 +98,7 @@ async function processStore(store, targets) {
     const dailyDaycare = month.daycare / month.days_open;
 
     // Update days with targets and add to week
-    for (const day of Object.values(month.days)) {
+    for (const day of Object.values(month.days)) { // eslint-disable-line
       day.total = dailyTotal;
       day.retail = dailyRetail;
       day.grooming = dailyGrooming;
@@ -138,8 +111,8 @@ async function processStore(store, targets) {
   }
 
   // Calc weekly targets
-  for (const year of Object.values(years)) {
-    for (const [week, data] of Object.entries(year.weeks)) {
+  for (const year of Object.values(years)) { // eslint-disable-line
+    for (const [week, data] of Object.entries(year.weeks)) { // eslint-disable-line
       data.days_open = data.days.length;
       data.total = toCurrency(data.days.reduce((acc, d) => acc + d.total, 0), 0);
       data.grooming = toCurrency(data.days.reduce((acc, d) => acc + d.grooming, 0), 0);
@@ -150,23 +123,23 @@ async function processStore(store, targets) {
 
   // Update Mongo via GraphQL
   // First should we update or add?
-  for (const [year, data] of Object.entries(years)) {
-    const query = await queryGraphQL(targetYearQuery, { year: Number(year), store: store.name });
-    const target = query.target;
-    const targetId = target ? target._id : null;
+  for (const [year, data] of Object.entries(years)) { // eslint-disable-line
+    const query = await queryGraphQL(targetYearQuery, { year: Number(year), store: store.name }); // eslint-disable-line
+    const { target } = query;
+    const targetId = target ? target._id : null; // eslint-disable-line
     const mutation = targetMutation(store, year, data, targetId);
-    await mutateGraphQL(mutation);
+    await mutateGraphQL(mutation); // eslint-disable-line
     console.log(`Update ${store.name} ${year} targets`);
   }
 }
 
 async function process() {
-// Loop through the stores
-  for (const [storeName, sheet] of Object.entries(workbook.Sheets)) {
+  // Loop through the stores
+  await Promise.all(Object.entries(workbook.Sheets).map(async ([storeName, sheet]) => {
     const store = await getStore(storeName);
     const targets = getTargets(sheet);
-    await processStore(store, targets);
-  }
+    return processStore(store, targets);
+  }));
 }
 
 process().then(() => console.log('done'));

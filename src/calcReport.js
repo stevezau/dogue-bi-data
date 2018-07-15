@@ -10,7 +10,8 @@ import {
   divide,
   toCurrency,
   compareArrays,
-  chunkMutations
+  chunkMutations,
+  openDays
 } from './utils';
 
 const moment = extendMoment(Moment);
@@ -182,6 +183,13 @@ function formatReport(store, type, report) {
     retail: { name: 'retail', metrics: {} },
   };
 
+  const reportFrom = type.startOf(report.date);
+  const reportTo = type.endOf(report.date);
+
+  const daysOpen = openDays(store, reportFrom, reportTo);
+  const today = moment.tz();
+  const daysLeft = Object.values(daysOpen).filter(d => d.date.diff(today, 'days') >= 0);
+
   const storeMetrics = {};
 
   // Sales Metrics
@@ -219,6 +227,8 @@ function formatReport(store, type, report) {
     date: report.date.toISOString(),
     local_date: report.local_date,
     departments: Object.values(departments),
+    days_open: Object.values(daysOpen).length,
+    days_left: daysLeft.length
   };
 }
 
@@ -255,7 +265,6 @@ function processUpdates(store, updated, deleted) {
 }
 
 async function processStore(name, from, to, type) {
-
   try {
     let store;
 
