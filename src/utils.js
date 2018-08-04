@@ -11,7 +11,7 @@ export const moment = extendMoment(Moment);
 
 axios.interceptors.response.use((response) => {
   const hrend = process.hrtime(response.config.ts);
-  console.info('Execution time (hr): %ds %dms', hrend[0], hrend[1] / 1000000);
+  // console.info('Execution time (hr): %ds %dms', hrend[0], hrend[1] / 1000000);
   return response;
 });
 

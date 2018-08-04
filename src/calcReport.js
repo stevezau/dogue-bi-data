@@ -1,7 +1,8 @@
 import chrono from 'chrono-node';
 import Moment from 'moment-timezone';
 import { extendMoment } from 'moment-range';
-import { reportMutation, dailyQuery, deleteReports } from './graph.schema';
+import cloneDeep from 'clone-deep';
+import { reportMutation, dailyQuery, deleteReports, prevQuery, defaultMetrics } from './graph.schema';
 import {
   getStore,
   handleError,
@@ -37,13 +38,13 @@ function KPIMetrics(store, metrics, report) {
 
 function salesMetrics(sales, target) {
   return {
-    sales_target: target,
-    sales_total: toCurrency(sales.reduce((v, s) => v + s.total, 0) || 0.0),
-    sales_subtotal: toCurrency(sales.reduce((v, s) => v + s.subtotal, 0) || 0.0),
-    sales_tax: toCurrency(sales.reduce((v, s) => v + s.tax, 0) || 0.0),
-    sales_discount: toCurrency(sales.reduce((v, s) => v + s.discount, 0) || 0.0),
-    sales_transactions: toCurrency(sales.reduce((v, s) => v + s.transactions, 0) || 0),
-    sales_units: sales.reduce((v, s) => v + s.units, 0) || 0
+    sales_target: target || 0,
+    sales_total: toCurrency(sales.reduce((v, s) => v + s.total, 0) || defaultMetrics.sales_total),
+    sales_subtotal: toCurrency(sales.reduce((v, s) => v + s.subtotal, 0) || defaultMetrics.sales_subtotal),
+    sales_tax: toCurrency(sales.reduce((v, s) => v + s.tax, 0) || defaultMetrics.sales_tax),
+    sales_discount: toCurrency(sales.reduce((v, s) => v + s.discount, 0) || defaultMetrics.sales_discount),
+    sales_transactions: toCurrency(sales.reduce((v, s) => v + s.transactions, 0) || defaultMetrics.sales_transactions),
+    sales_units: sales.reduce((v, s) => v + s.units, 0) || defaultMetrics.sales_units
   };
 }
 
@@ -68,14 +69,13 @@ function wageMetrics(departments) {
   };
 }
 
-function sortType(store, type, data, targets) {
-  const now = moment();
-  const reports = {};
+function sortDataByType(store, type, data) {
+  const sorted = {};
 
-  function getReport(date) {
+  function getSortDate(date) {
     const localDate = type.format(date);
-    if (!(localDate in reports)) {
-      reports[localDate] = {
+    if (!(localDate in sorted)) {
+      sorted[localDate] = {
         date: type.formatDT(date, store.timezone),
         type,
         target: {
@@ -86,11 +86,11 @@ function sortType(store, type, data, targets) {
         departments: {}
       };
     }
-    return reports[localDate];
+    return sorted[localDate];
   }
 
   function getDept(date, name) {
-    const report = getReport(date);
+    const report = getSortDate(date);
     if (!(name in report.departments)) {
       report.departments[name] = { sales: [], wages: [] };
     }
@@ -103,7 +103,7 @@ function sortType(store, type, data, targets) {
   });
 
   data.sales.forEach((sale) => {
-    const report = getReport(sale.date);
+    const report = getSortDate(sale.date);
     report.sales.push(sale);
   });
 
@@ -112,9 +112,17 @@ function sortType(store, type, data, targets) {
     dept.wages.push(wage);
   });
 
-  Object.entries(reports).forEach(([date, report]) => {
+  return sorted;
+}
+
+function sortType(store, type, data, targets) {
+  const now = moment();
+
+  const sorted = sortDataByType(store, type, data);
+
+  Object.entries(sorted).forEach(([date, report]) => {
     if (report.date > now || (report.sales === {} && report.wages.length === 0)) {
-      delete reports[date];
+      delete sorted[date];
       return;
     }
 
@@ -123,8 +131,60 @@ function sortType(store, type, data, targets) {
       report.target = target; //eslint-disable-line
     }
   });
+  return sorted;
+}
 
-  return reports;
+async function appendPrevData(store, type, reports) {
+  return Promise.all(reports.map((async (report) => {
+    const newReport = cloneDeep(report);
+
+    const appendData = (prefix, data) => {
+      Object.values(newReport.departments).forEach((dept) => {
+        // Set defaults
+        let renamed = Object.entries(defaultMetrics).reduce((a, v) => ({ ...a, [`${prefix}_${v[0]}`]: v[1] }), {});
+
+        const found = data.departments.filter(d => d.name === dept.name)[0];
+        if (found) {
+          renamed = {
+            ...renamed,
+            ...Object.entries(found.metrics).reduce((a, v) => ({ ...a, [`${prefix}_${v[0]}`]: v[1] }), {})
+          };
+        }
+        Object.assign(dept.metrics, renamed);
+      });
+    };
+
+    const prevPeriodLocalDate = type.format(type.prevPeriod(newReport.date));
+    const prevYearLocalDate = type.format(type.prevYear(newReport.date));
+
+    let prevPeriodReport = reports.filter(r => (
+      r.local_date === prevPeriodLocalDate && r.type === type.type && r.store === store.name))[0];
+    let prevYearReport = reports.filter(r => (
+      r.local_date === prevYearLocalDate && r.type === type.type && r.store === store.name))[0];
+
+    if (!prevPeriodReport) {
+      const existing = await queryGraphQL(prevQuery, {
+        store: store.name,
+        local_date: prevPeriodLocalDate,
+        type: type.type
+      });
+      prevPeriodReport = existing.report || { departments: [] };
+    }
+
+    if (!prevYearReport) {
+      const existing = await queryGraphQL(prevQuery, {
+        store: store.name,
+        local_date: prevYearLocalDate,
+        type: type.type
+      });
+      prevYearReport = existing.report || { departments: [] };
+    }
+
+    appendData('prev_period', prevPeriodReport);
+    appendData('prev_year', prevYearReport);
+
+    return newReport;
+  })));
 }
 
 const typesAllowed = {
@@ -132,6 +192,8 @@ const typesAllowed = {
     type: 'day',
     startOf: d => moment(d).startOf('day'),
     endOf: d => moment(d).endOf('day'),
+    prevYear: d => moment(d).subtract(1, 'years'),
+    prevPeriod: d => moment(d).subtract(1, 'days'),
     group: { query: 'day', date: 'day' },
     format: d => moment(d).format('YYYY-MM-DD'),
     formatDT: (d, tz) => moment.tz(d, tz).hour(7), // User hour 7 to remove daylight savings issues
@@ -151,6 +213,8 @@ const typesAllowed = {
     type: 'week',
     startOf: d => moment(d).startOf('isoWeek'),
     endOf: d => moment(d).endOf('isoWeek'),
+    prevYear: d => moment(d).subtract(1, 'years'),
+    prevPeriod: d => moment(d).subtract(1, 'weeks'),
     group: { query: 'day', date: 'week' },
     format: d => moment(d).format('YYYY-W'),
     formatDT: (d, tz) => moment.tz(d, tz).startOf('isoWeek').hour(7), // User hour 7 to remove daylight savings issues
@@ -165,6 +229,8 @@ const typesAllowed = {
     type: 'month',
     startOf: d => moment(d).startOf('month'),
     endOf: d => moment(d).endOf('month'),
+    prevYear: d => moment(d).subtract(1, 'years'),
+    prevPeriod: d => moment(d).subtract(1, 'months'),
     group: { query: 'month', date: 'month' },
     format: d => moment(d).format('YYYY-MM'),
     formatDT: (d, tz) => moment.tz(d, tz).startOf('month').hour(7), // User hour 7 to remove daylight savings issues
@@ -300,8 +366,9 @@ async function processStore(name, from, to, type) {
 
     const sorted = sortType(store, type, data, targets);
     const formatted = Object.values(sorted).map(r => formatReport(store, type, r));
+    const withPrev = await appendPrevData(store, type, formatted);
 
-    const compared = compareArrays(existingReports, formatted, 'key');
+    const compared = compareArrays(existingReports, withPrev, 'key');
     await processUpdates(store, compared.updated, compared.deleted);
 
     console.log(`${store.name} updated reports`);

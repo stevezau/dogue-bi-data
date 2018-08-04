@@ -12,29 +12,44 @@ export const storeQuery = `
     }
   }`;
 
+export const defaultMetrics = {
+  sales_target: 0.0,
+  sales_total: 0.0,
+  sales_subtotal: 0.0,
+  sales_tax: 0.0,
+  sales_discount: 0.0,
+  sales_transactions: 0,
+  sales_units: 0,
+
+  units_per_transaction: 0.0,
+  avg_transaction_value: 0.0,
+  average_unit_value: 0.0,
+  average_hourly_productivity: 0.0,
+  wage_cost_percent: 0.0,
+
+  staff_count: 0,
+  staff_hours: 0.0,
+  staff_wages: 0.0
+};
+
+function metricsMutation(metrics, key) {
+  const prefix = key ? `${key}_` : '';
+
+  return Object.entries(defaultMetrics).map(([mKey, mValue]) => {
+    const value = metrics[`${prefix}${mKey}`] || mValue;
+    return `${prefix}${mKey}: ${value}`;
+  }).join('\n');
+}
+
 function departmentMutation(departments) {
   return departments.map((department) => { // eslint-disable-line
     const { metrics } = department;
     return `{
       name: "${department.name}"
       metrics: {
-        sales_target: ${metrics.sales_target}
-        sales_total: ${metrics.sales_total}
-        sales_subtotal: ${metrics.sales_subtotal}
-        sales_tax: ${metrics.sales_tax}
-        sales_discount: ${metrics.sales_discount}
-        sales_transactions: ${metrics.sales_transactions}
-        sales_units: ${metrics.sales_units}
-  
-        units_per_transaction: ${metrics.units_per_transaction}
-        avg_transaction_value: ${metrics.avg_transaction_value}
-        average_unit_value: ${metrics.average_unit_value}
-        average_hourly_productivity: ${metrics.average_hourly_productivity}
-        wage_cost_percent: ${metrics.wage_cost_percent}
-  
-        staff_count: ${metrics.staff_count}
-        staff_hours: ${metrics.staff_hours}
-        staff_wages: ${metrics.staff_wages}
+        ${metricsMutation(metrics)}
+        ${metricsMutation(metrics, 'prev_period')}
+        ${metricsMutation(metrics, 'prev_year')}
        }
     }`;
   });
@@ -62,6 +77,44 @@ export function reportMutation(report) {
       }`;
 }
 
+const metrics = [
+  'sales_target',
+  'sales_total',
+  'sales_subtotal',
+  'sales_tax',
+  'sales_discount',
+  'sales_transactions',
+  'sales_units',
+  'units_per_transaction',
+  'avg_transaction_value',
+  'average_unit_value',
+  'average_hourly_productivity',
+  'wage_cost_percent',
+  'staff_hours',
+  'staff_wages',
+  'staff_count'
+];
+
+
+export const prevQuery = `
+  query report($store: String!, $local_date: String!, $type: String!) {
+    report(store: $store, local_date: $local_date, type: $type) {
+      _id
+      store
+      type
+      date
+      local_date
+      days_open
+      days_left
+      departments {
+        name
+        metrics {
+          ${metrics.join('\n')}
+        }
+      }
+    }
+  }`;
+
 export const dailyQuery = `
   query report($store: String!, $from: Date!, $to: Date!, $years: [Int]!, $group: String!, $type: String!) {
     reports(store: $store, from: $from, to: $to, type: $type) {
@@ -75,21 +128,9 @@ export const dailyQuery = `
       departments {
         name
         metrics {
-          sales_target
-          sales_total
-          sales_subtotal
-          sales_tax
-          sales_discount
-          sales_transactions
-          sales_units
-          units_per_transaction
-          avg_transaction_value
-          average_unit_value
-          average_hourly_productivity
-          wage_cost_percent
-          staff_hours
-          staff_wages
-          staff_count
+          ${metrics.join('\n')}
+          ${metrics.map(m => `prev_period_${m}`).join('\n')}
+          ${metrics.map(m => `prev_year_${m}`).join('\n')}
         }
       }
     }

@@ -34,7 +34,6 @@ function clientMutation(client, field) {
 }
 
 async function run() {
-  // Loop through the stores
   const workbook = XLSX.readFile(process.argv[2]);
   const sheet = Object.values(workbook.Sheets)[0];
   const json = XLSX.utils.sheet_to_json(sheet);
