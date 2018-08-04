@@ -17,6 +17,24 @@ import {
 
 const moment = extendMoment(Moment);
 
+function getData(store, type, from, to) {
+  const years = [];
+  for (const year of moment.range(from, to).by(type.group.date)) { // eslint-disable-line
+    if (!years.includes(year.year())) {
+      years.push(year.year());
+    }
+  }
+
+  return queryGraphQL(dailyQuery, {
+    years,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    store: store.name,
+    group: type.group.query,
+    type: type.type
+  });
+}
+
 function KPIMetrics(store, metrics, report) {
   const isFuture = report.type.isFuture(store, report);
 
@@ -39,12 +57,12 @@ function KPIMetrics(store, metrics, report) {
 function salesMetrics(sales, target) {
   return {
     sales_target: target || 0,
-    sales_total: toCurrency(sales.reduce((v, s) => v + s.total, 0) || defaultMetrics.sales_total),
-    sales_subtotal: toCurrency(sales.reduce((v, s) => v + s.subtotal, 0) || defaultMetrics.sales_subtotal),
-    sales_tax: toCurrency(sales.reduce((v, s) => v + s.tax, 0) || defaultMetrics.sales_tax),
-    sales_discount: toCurrency(sales.reduce((v, s) => v + s.discount, 0) || defaultMetrics.sales_discount),
-    sales_transactions: toCurrency(sales.reduce((v, s) => v + s.transactions, 0) || defaultMetrics.sales_transactions),
-    sales_units: sales.reduce((v, s) => v + s.units, 0) || defaultMetrics.sales_units
+    sales_total: toCurrency(sales.reduce((v, s) => v + s.total, 0) || 0.0),
+    sales_subtotal: toCurrency(sales.reduce((v, s) => v + s.subtotal, 0) || 0.0),
+    sales_tax: toCurrency(sales.reduce((v, s) => v + s.tax, 0) || 0.0),
+    sales_discount: toCurrency(sales.reduce((v, s) => v + s.discount, 0) || 0.0),
+    sales_transactions: toCurrency(sales.reduce((v, s) => v + s.transactions, 0) || 0),
+    sales_units: sales.reduce((v, s) => v + s.units, 0) || 0
   };
 }
 
@@ -134,59 +152,6 @@ function sortType(store, type, data, targets) {
   return sorted;
 }
 
-async function appendPrevData(store, type, reports) {
-  return Promise.all(reports.map((async (report) => {
-    const newReport = cloneDeep(report);
-
-    const appendData = (prefix, data) => {
-      Object.values(newReport.departments).forEach((dept) => {
-        // Set defaults
-        let renamed = Object.entries(defaultMetrics).reduce((a, v) => ({ ...a, [`${prefix}_${v[0]}`]: v[1] }), {});
-
-        const found = data.departments.filter(d => d.name === dept.name)[0];
-        if (found) {
-          renamed = {
-            ...renamed,
-            ...Object.entries(found.metrics).reduce((a, v) => ({ ...a, [`${prefix}_${v[0]}`]: v[1] }), {})
-          };
-        }
-        Object.assign(dept.metrics, renamed);
-      });
-    };
-
-    const prevPeriodLocalDate = type.format(type.prevPeriod(newReport.date));
-    const prevYearLocalDate = type.format(type.prevYear(newReport.date));
-
-    let prevPeriodReport = reports.filter(r => (
-      r.local_date === prevPeriodLocalDate && r.type === type.type && r.store === store.name))[0];
-    let prevYearReport = reports.filter(r => (
-      r.local_date === prevYearLocalDate && r.type === type.type && r.store === store.name))[0];
-
-    if (!prevPeriodReport) {
-      const existing = await queryGraphQL(prevQuery, {
-        store: store.name,
-        local_date: prevPeriodLocalDate,
-        type: type.type
-      });
-      prevPeriodReport = existing.report || { departments: [] };
-    }
-
-    if (!prevYearReport) {
-      const existing = await queryGraphQL(prevQuery, {
-        store: store.name,
-        local_date: prevYearLocalDate,
-        type: type.type
-      });
-      prevYearReport = existing.report || { departments: [] };
-    }
-
-    appendData('prev_period', prevPeriodReport);
-    appendData('prev_year', prevYearReport);
-
-    return newReport;
-  })));
-}
-
 const typesAllowed = {
   day: {
     type: 'day',
@@ -198,6 +163,7 @@ const typesAllowed = {
     format: d => moment(d).format('YYYY-MM-DD'),
     formatDT: (d, tz) => moment.tz(d, tz).hour(7), // User hour 7 to remove daylight savings issues
     target: () => {},
+    isCurrent: (date, tz) => moment.tz(moment(), tz).isSame(moment.tz(date, tz), 'day'),
     isFuture: (store, report) => {
       // Don't include future or current day if before 5pm
       const diffDays = report.date.diff(moment(), 'days');
@@ -223,6 +189,7 @@ const typesAllowed = {
       const week = moment(date).format('W');
       return year.weeks[`w${week}`];
     },
+    isCurrent: (date, tz) => moment.tz(moment(), tz).isSame(moment.tz(date, tz), 'isoWeek'),
     isFuture: () => false
   },
   month: {
@@ -238,6 +205,7 @@ const typesAllowed = {
       const year = targets[moment(date).format('YYYY')] || { months: {} };
       return year.months[moment(date).format('MMM').toLowerCase()];
     },
+    isCurrent: (date, tz) => moment.tz(moment(), tz).isSame(moment.tz(date, tz), 'month'),
     isFuture: () => false
   }
 };
@@ -303,24 +271,6 @@ function formatReport(store, type, report) {
   };
 }
 
-function getData(store, type, from, to) {
-  const years = [];
-  for (const year of moment.range(from, to).by(type.group.date)) { // eslint-disable-line
-    if (!years.includes(year.year())) {
-      years.push(year.year());
-    }
-  }
-
-  return queryGraphQL(dailyQuery, {
-    years,
-    from: from.toISOString(),
-    to: to.toISOString(),
-    store: store.name,
-    group: type.group.query,
-    type: type.type
-  });
-}
-
 function processUpdates(store, updated, deleted) {
   const promises = [];
   const mutations = updated.map(r => reportMutation(r));
@@ -333,6 +283,74 @@ function processUpdates(store, updated, deleted) {
     promises.push(mutateGraphQL(deleteReports, { store: store.name, ids: deleted.map(w => w._id) })); // eslint-disable-line
   }
   return Promise.all(promises);
+}
+
+async function appendPrevData(store, type, reports) {
+  return Promise.all(reports.map((async (report) => {
+    const newReport = cloneDeep(report);
+    const reportDate = moment(newReport.date);
+
+    const appendData = (prefix, data) => {
+      Object.values(newReport.departments).forEach((dept) => {
+        // Set defaults
+        let renamed = Object.entries(defaultMetrics).reduce((a, v) => ({ ...a, [`${prefix}_${v[0]}`]: v[1] }), {});
+
+        const found = data.departments.filter(d => d.name === dept.name)[0];
+        if (found) {
+          renamed = {
+            ...renamed,
+            ...Object.entries(found.metrics).reduce((a, v) => ({ ...a, [`${prefix}_${v[0]}`]: v[1] }), {})
+          };
+        }
+        Object.assign(dept.metrics, renamed);
+      });
+    };
+
+    const prevPeriodLocalDate = type.format(type.prevPeriod(reportDate));
+    const prevYearLocalDate = type.format(type.prevYear(reportDate));
+
+    let prevPeriodReport = reports.filter(r => (
+      r.local_date === prevPeriodLocalDate && r.type === type.type && r.store === store.name))[0];
+    let prevYearReport = reports.filter(r => (
+      r.local_date === prevYearLocalDate && r.type === type.type && r.store === store.name))[0];
+
+    // if it is current, then use type to current date.
+    if (type.isCurrent(reportDate, store.timezone)) {
+      const dataPeriod = await getData(store, type, type.startOf(type.prevPeriod(report.date)), type.prevPeriod(moment())); // eslint-disable-line
+      const dataYear = await getData(store, type, type.startOf(type.prevYear(report.date)), type.prevYear(moment())); // eslint-disable-line
+      const [prevPeriodSorted] = Object.values(sortType(store, type, dataPeriod, {}));
+      const [prevYearSorted] = Object.values(sortType(store, type, dataYear, {}));
+      if (prevPeriodSorted) {
+        prevPeriodReport = formatReport(store, type, prevPeriodSorted);
+      }
+      if (prevYearSorted) {
+        prevYearReport = formatReport(store, type, prevYearSorted);
+      }
+    }
+
+    if (!prevPeriodReport) {
+      const existing = await queryGraphQL(prevQuery, {
+        store: store.name,
+        local_date: prevPeriodLocalDate,
+        type: type.type
+      });
+      prevPeriodReport = existing.report || { departments: [] };
+    }
+
+    if (!prevYearReport) {
+      const existing = await queryGraphQL(prevQuery, {
+        store: store.name,
+        local_date: prevYearLocalDate,
+        type: type.type
+      });
+      prevYearReport = existing.report || { departments: [] };
+    }
+
+    appendData('prev_period', prevPeriodReport);
+    appendData('prev_year', prevYearReport);
+
+    return newReport;
+  })));
 }
 
 async function processStore(name, from, to, type) {
