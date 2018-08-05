@@ -291,6 +291,8 @@ async function appendPrevData(store, type, reports) {
     const reportDate = moment(newReport.date);
 
     const appendData = (prefix, data) => {
+      newReport[`${prefix}_days_open`] = data.days_open;
+      newReport[`${prefix}_days_left`] = data.days_left;
       Object.values(newReport.departments).forEach((dept) => {
         // Set defaults
         let renamed = Object.entries(defaultMetrics).reduce((a, v) => ({ ...a, [`${prefix}_${v[0]}`]: v[1] }), {});
