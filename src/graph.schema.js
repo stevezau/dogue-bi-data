@@ -69,6 +69,10 @@ export function reportMutation(report) {
         local_date: "${report.local_date}",
         days_open: ${report.days_open},
         days_left: ${report.days_left},
+        prev_period_days_open: ${report.prev_period_days_open || 0},
+        prev_period_days_left: ${report.prev_period_days_left || 0},
+        prev_year_days_open: ${report.prev_year_days_open || 0},
+        prev_year_days_left: ${report.prev_year_days_left || 0},
         departments: [
           ${departmentMutation(report.departments).join(' ')}
         ]
@@ -106,6 +110,10 @@ export const prevQuery = `
       local_date
       days_open
       days_left
+      prev_period_days_open
+      prev_period_days_left
+      prev_year_days_open
+      prev_year_days_left      
       departments {
         name
         metrics {
@@ -125,6 +133,10 @@ export const dailyQuery = `
       local_date
       days_open
       days_left
+      prev_period_days_open
+      prev_period_days_left
+      prev_year_days_open
+      prev_year_days_left      
       departments {
         name
         metrics {

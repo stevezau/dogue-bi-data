@@ -210,12 +210,14 @@ const typesAllowed = {
   }
 };
 
-function formatReport(store, type, report) {
+function formatReport(store, type, report, today) {
   const departments = {
     daycare: { name: 'daycare', metrics: {} },
     grooming: { name: 'grooming', metrics: {} },
     retail: { name: 'retail', metrics: {} },
   };
+
+  const now = today || moment.tz();
 
   const reportFrom = type.startOf(report.date);
   const reportTo = type.endOf(report.date);
@@ -225,8 +227,7 @@ function formatReport(store, type, report) {
 
   if (store.days_open) {
     daysOpen = openDays(store, reportFrom, reportTo);
-    const today = moment.tz();
-    daysLeft = Object.values(daysOpen).filter(d => d.date.diff(today, 'days') >= 0);
+    daysLeft = Object.values(daysOpen).filter(d => d.date.diff(now, 'days') >= 0);
   }
 
   const storeMetrics = {};
@@ -291,8 +292,8 @@ async function appendPrevData(store, type, reports) {
     const reportDate = moment(newReport.date);
 
     const appendData = (prefix, data) => {
-      newReport[`${prefix}_days_open`] = data.days_open;
-      newReport[`${prefix}_days_left`] = data.days_left;
+      newReport[`${prefix}_days_open`] = data.days_open || 0;
+      newReport[`${prefix}_days_left`] = data.days_left || 0;
       Object.values(newReport.departments).forEach((dept) => {
         // Set defaults
         let renamed = Object.entries(defaultMetrics).reduce((a, v) => ({ ...a, [`${prefix}_${v[0]}`]: v[1] }), {});
@@ -323,10 +324,12 @@ async function appendPrevData(store, type, reports) {
       const [prevPeriodSorted] = Object.values(sortType(store, type, dataPeriod, {}));
       const [prevYearSorted] = Object.values(sortType(store, type, dataYear, {}));
       if (prevPeriodSorted) {
-        prevPeriodReport = formatReport(store, type, prevPeriodSorted);
+        // Minus 1 day so the same day last period is considered closed/finished
+        prevPeriodReport = formatReport(store, type, prevPeriodSorted, type.prevPeriod(moment()).add(1, 'days'));
       }
       if (prevYearSorted) {
-        prevYearReport = formatReport(store, type, prevYearSorted);
+        // Minus 1 day so the same day last year is considered closed/finished
+        prevYearReport = formatReport(store, type, prevYearSorted, type.prevYear(moment()).add(1, 'days'));
       }
     }
 

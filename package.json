@@ -42,10 +42,11 @@
     "deep-equal": "^1.0.1",
     "lodash": "^4.17.4",
     "moment": "^2.22.1",
-    "moment-range": "^4.0.0",
+    "moment-range": "^4.0.1",
     "moment-timezone": "^0.5.16",
     "node-uuid": "^1.4.8",
     "phone": "^2.0.1",
+    "promise-pool-executor": "^1.1.1",
     "source-map-support": "^0.5.5",
     "xlsx": "^0.11.18"
   }

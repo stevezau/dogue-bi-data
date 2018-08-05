@@ -3,6 +3,7 @@ import deepEqual from 'deep-equal';
 import axios from 'axios';
 import Holidays from 'date-holidays/src/index';
 import Moment from 'moment/moment';
+import { PromisePoolExecutor } from 'promise-pool-executor';
 import { extendMoment } from 'moment-range';
 
 import { storeQuery } from './graph.schema';
@@ -13,6 +14,10 @@ axios.interceptors.response.use((response) => {
   const hrend = process.hrtime(response.config.ts);
   // console.info('Execution time (hr): %ds %dms', hrend[0], hrend[1] / 1000000);
   return response;
+});
+
+const pool = new PromisePoolExecutor({
+  concurrencyLimit: 20
 });
 
 export function chunkMutations(mutations, size = 5) {
@@ -32,21 +37,23 @@ export function handleError(err, store, cb) {
   }
 }
 
-function requestHandler(options) {
-  return new Promise((resolve, reject) => {
-    axios({ ...options, ts: process.hrtime() })
-      .then((res) => {
-        if (res.data.errors) {
-          reject(new Error(JSON.stringify(res.data.errors)));
-        } else {
-          resolve(res.data);
-        }
-      })
-      .catch((err) => {
-        console.log(`error response ${err}`);
-        reject(err);
-      });
-  });
+async function requestHandler(options) {
+  return pool.addSingleTask({
+    generator: () => new Promise((resolve, reject) => {
+      axios({ ...options, ts: process.hrtime() })
+        .then((res) => {
+          if (res.data.errors) {
+            reject(new Error(JSON.stringify(res.data.errors)));
+          } else {
+            resolve(res.data);
+          }
+        })
+        .catch((err) => {
+          console.log(`error response ${err}`);
+          reject(err);
+        });
+    })
+  }).promise();
 }
 
 export function mutateGraphQL(mutations, variables = {}) {
@@ -72,7 +79,6 @@ export function queryGraphQL(query, variables = {}) {
       .catch(err => reject(err));
   });
 }
-
 
 export function getStore(name) {
   return new Promise((resolve, reject) => {
@@ -126,7 +132,6 @@ export function divide(d1, d2) {
   }
   return toCurrency(d1 / d2);
 }
-
 
 export function openDays(store, from, to) {
   const holidays = new Holidays('AU', store.state);
