@@ -217,8 +217,6 @@ function formatReport(store, type, report, today) {
     retail: { name: 'retail', metrics: {} },
   };
 
-  const now = today || moment.tz().hour('13').minute(0);
-
   const reportFrom = type.startOf(report.date);
   const reportTo = type.endOf(report.date);
 
@@ -226,8 +224,10 @@ function formatReport(store, type, report, today) {
   let daysLeft = [];
 
   if (store.days_open) {
+    // If greater then 11 hours (so passed 4pm then consider the day passed/closed)
+    const now = (today || moment.tz(store.timezone)).hour('16').minute(0);
     daysOpen = openDays(store, reportFrom, reportTo);
-    daysLeft = Object.values(daysOpen).filter(d => d.date.diff(now, 'days') >= 0);
+    daysLeft = Object.values(daysOpen).filter(d => d.date.diff(now, 'hours') >= 8);
   }
 
   const storeMetrics = {};
