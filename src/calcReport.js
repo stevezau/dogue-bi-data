@@ -217,7 +217,7 @@ function formatReport(store, type, report, today) {
     retail: { name: 'retail', metrics: {} },
   };
 
-  const now = today || moment.tz();
+  const now = today || moment.tz().hour('13').minute(0);
 
   const reportFrom = type.startOf(report.date);
   const reportTo = type.endOf(report.date);
