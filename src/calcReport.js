@@ -165,11 +165,11 @@ const typesAllowed = {
     target: () => {},
     isCurrent: (date, tz) => moment.tz(moment(), tz).isSame(moment.tz(date, tz), 'day'),
     isFuture: (store, report) => {
-      // Don't include future or current day if before 5pm
+      // Don't include future or current day if before 3pm
       const diffDays = report.date.diff(moment(), 'days');
       if (diffDays > 0) return true;
       if (diffDays === 0) {
-        const todayClosing = moment.tz(moment(), store.timezone).hour('17').minute(0);
+        const todayClosing = moment.tz(moment(), store.timezone).hour('13').minute(0);
         if (todayClosing > moment.tz(moment(), store.timezone)) return true;
       }
       return false;
