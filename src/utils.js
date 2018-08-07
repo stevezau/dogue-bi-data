@@ -143,7 +143,9 @@ export function openDays(store, from, to) {
   for (const day of range.by('day')) {  // eslint-disable-line
     const dayName = day.format('dddd').toLowerCase();
     // Check if Open on Day
-    if (store.days_open.includes(dayName) && !holidays.isHoliday(day.toDate())) {
+    const hol = holidays.isHoliday(day.toDate());
+    const isHol = hol && hol.type !== 'bank';
+    if (store.days_open.includes(dayName) && !isHol) {
       days[day.format('YYYY-MM-DD')] = { date: day };
     }
   }
