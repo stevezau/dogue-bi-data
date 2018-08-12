@@ -29,7 +29,8 @@ export const defaultMetrics = {
 
   staff_count: 0,
   staff_hours: 0.0,
-  staff_wages: 0.0
+  staff_wages: 0.0,
+  bookings: 0
 };
 
 function metricsMutation(metrics, key) {
@@ -96,7 +97,8 @@ const metrics = [
   'wage_cost_percent',
   'staff_hours',
   'staff_wages',
-  'staff_count'
+  'staff_count',
+  'bookings'
 ];
 
 
@@ -173,6 +175,11 @@ export const dailyQuery = `
       super
       employees
       hours
+    }
+    bookings: calcBookings(store: $store, from: $from, to: $to, group: $group) {
+      date
+      department
+      bookings
     }
     targets (store:$store, years: $years) {
       year

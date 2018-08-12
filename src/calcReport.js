@@ -110,7 +110,7 @@ function sortDataByType(store, type, data) {
   function getDept(date, name) {
     const report = getSortDate(date);
     if (!(name in report.departments)) {
-      report.departments[name] = { sales: [], wages: [] };
+      report.departments[name] = { sales: [], wages: [], bookings: 0 };
     }
     return report.departments[name];
   }
@@ -128,6 +128,11 @@ function sortDataByType(store, type, data) {
   data.wages.forEach((wage) => {
     const dept = getDept(wage.date, wage.department.toLowerCase());
     dept.wages.push(wage);
+  });
+
+  data.bookings.forEach((bookings) => {
+    const dept = getDept(bookings.date, bookings.department.toLowerCase());
+    dept.bookings += bookings.bookings;
   });
 
   return sorted;
@@ -224,13 +229,13 @@ function formatReport(store, type, report, today) {
   let daysLeft = [];
 
   if (store.days_open) {
-    // If greater then 11 hours (so passed 4pm then consider the day passed/closed)
-    const now = (today || moment.tz(store.timezone)).hour('16').minute(0);
+    const now = (today || moment.tz(store.timezone));
     daysOpen = openDays(store, reportFrom, reportTo);
-    daysLeft = Object.values(daysOpen).filter(d => d.date.diff(now, 'hours') >= 8);
+    // If greater then 16 hours (so passed 4pm then consider the day passed/closed)
+    daysLeft = Object.values(daysOpen).filter(d => moment(d.date).hour(16).diff(now, 'hours') >= 0);
   }
 
-  const storeMetrics = {};
+  const storeMetrics = { bookings: 0 };
 
   // Sales Metrics
   Object.assign(storeMetrics, salesMetrics(report.sales, report.target.total || 0));
@@ -247,7 +252,8 @@ function formatReport(store, type, report, today) {
 
   // Department Metrics
   Object.entries(departments).forEach(([deptName, deptObj]) => {
-    const dept = report.departments[deptName] || { sales: [], wages: [] };
+    const dept = report.departments[deptName] || { sales: [], wages: [], bookings: 0 };
+
     // Dept Sales
     Object.assign(deptObj.metrics, salesMetrics(dept.sales || {}, report.target[deptName] || 0)); // eslint-disable-line
 
@@ -256,6 +262,9 @@ function formatReport(store, type, report, today) {
 
     // Dept KPI Metrics
     Object.assign(deptObj.metrics, KPIMetrics(store, deptObj.metrics, report));
+
+    // Bookings
+    deptObj.metrics.bookings = dept.bookings;  // eslint-disable-line
   });
 
   departments.store = { name: 'store', metrics: storeMetrics };
