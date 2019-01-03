@@ -187,7 +187,7 @@ const typesAllowed = {
     prevYear: d => moment(d).subtract(1, 'years'),
     prevPeriod: d => moment(d).subtract(1, 'weeks'),
     group: { query: 'day', date: 'week' },
-    format: d => moment(d).format('YYYY-W'),
+    format: d => moment(d).format('GGGG-W'),
     formatDT: (d, tz) => moment.tz(d, tz).startOf('isoWeek').hour(7), // User hour 7 to remove daylight savings issues
     target: (date, targets) => {
       const year = targets[moment(date).format('YYYY')] || { weeks: {} };

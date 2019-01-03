@@ -11,8 +11,15 @@ import { storeQuery } from './graph.schema';
 export const moment = extendMoment(Moment);
 
 axios.interceptors.response.use((response) => {
-  const hrend = process.hrtime(response.config.ts);
-  // console.info('Execution time (hr): %ds %dms', hrend[0], hrend[1] / 1000000);
+  try {
+    const data = JSON.parse(response.config.data);
+    const hrend = process.hrtime(response.config.ts);
+    // console.info('Execution time (hr): %ds %dms \nQuery: %s\nVariables %s', hrend[0], hrend[1] / 1000000, data.query, JSON.stringify(data.variables));
+    return response;
+  } catch (err) {
+    console.log(err);
+    // do nothing
+  }
   return response;
 });
 
